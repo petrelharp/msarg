@@ -249,6 +249,17 @@ modify_grid_layer <- function (ga, layer.ind, dN=1, dG=1, dM=1) {
     return(ga)
 }
 
+add_barrier <- function (ga, layer.ind, rows=numeric(0), cols=numeric(0)) {
+    # remove migration between rows and rows+1 and cols and cols+1
+    layer.inds <- layer_inds(ga,layer.ind)
+    nrow <- nrow(ga)
+    ncol <- ncol(ga)
+    dummy <- Matrix(0,nrow=nrow,ncol=ncol)
+    dM <- ifelse( outer( (row(dummy) %in% rows), (col(dummy) %in% cols), "*" ), 0, 1 )
+    ga@M[layer.inds,layer.inds] <- ga@M[layer.inds,layer.inds] * dM
+    return(ga)
+}
+
 modify_migration <- function (ga, layer.ind, doutM=1, dinM=1) {
     # modify inmigration rates on a given layer:
     #   here, dinM is a vector of multiplicative changes to inmigration rates 
@@ -259,10 +270,9 @@ modify_migration <- function (ga, layer.ind, doutM=1, dinM=1) {
     layer.inds <- layer_inds(ga,layer.ind)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
-    dinM <- rep_len(dinM,nrow)
-    doutM <- rep_len(doutM,ncol)
-    dummy <- Matrix(0,nrow=nrow,ncol=ncol)
-    dM <- outer(dinM[row(dummy)],doutM[col(dummy)],"*")
+    dinM <- rep_len(dinM,nrow*ncol)
+    doutM <- rep_len(doutM,nrow*ncol)
+    dM <- outer(dinM,doutM,"*")
     ga@M[layer.inds,layer.inds] <- ga@M[layer.inds,layer.inds] * dM
     return(ga)
 }

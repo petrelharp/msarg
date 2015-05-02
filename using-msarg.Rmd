@@ -7,7 +7,7 @@ date: May 1, 2015
 ```{r setup, include=FALSE}
 source("msarg.R")
 fig.dim <- 5
-knitr::opts_chunk$set(fig.height=fig.dim,fig.width=2*fig.dim,fig.align='center')
+knitr::opts_chunk$set(fig.height=2*fig.dim,fig.width=2*fig.dim,fig.align='center')
 ```
 
 The basic object is the population model for a given chunk of time.
@@ -17,7 +17,7 @@ Let's make one,
 with two layers,
 of a 30 x 20 grid,
 within-layer migration rates of 1 and between-layer rates of 0.1:
-```{r init_grid, fig.height=2*fig.dim}
+```{r init_grid}
 ga <- grid_array(nlayers=2,nrow=30,ncol=20,N=1000,mig.rate=1,admix.rate=0.1)
 plot(ga)
 ```
@@ -29,8 +29,8 @@ So we have something to look at, let's
 increase migration rates on one layer,
 and then restrict each layer to a circle
 centered on the two corners:
-```{r zero_circles, fig.height=2*fig.dim}
-ga <- modify_migration(ga,layer.ind=1,doutM=rexp(ncol(ga)),dinM=rexp(nrow(ga)))
+```{r zero_circles}
+ga <- modify_migration(ga,layer.ind=1,doutM=rexp(ncol(ga)*nrow(ga)),dinM=rexp(nrow(ga)*ncol(ga)))
 plot(ga)
 ga <- restrict_patch(ga,layer.ind=1,xy=c(1,1),r=10)
 ga <- restrict_patch(ga,layer.ind=2,xy=c(nrow(ga),ncol(ga)),r=10)
@@ -38,12 +38,20 @@ plot(ga)
 ```
 Note that each population also has an associated "exponential growth" rate.
 
+We can also add barriers:
+```{r grid_barrier}
+ga <- grid_array(nlayers=2,nrow=30,ncol=20,N=1000,mig.rate=1,admix.rate=0.1)
+ga <- add_barrier(ga, layer=1, rows=c(5,15))
+ga <- add_barrier(ga, layer=2, cols=10)
+plot(ga)
+```
+
 Now, here's an example of stringing these together into a model,
 with two time steps,
 and a `dt` of 1 between them.
 ```{r init_dem}
 dem <- pop_to_dem( grid_array(nlayers=2,nrow=30,ncol=20,N=1000,mig.rate=1,admix.rate=0.1) )
-dem[[1]] <- modify_migration(dem[[1]],layer.ind=1,doutM=rexp(ncol(dem[[1]])),dinM=rexp(nrow(dem[[1]])))
+dem[[1]] <- modify_migration(dem[[1]],layer.ind=1,doutM=rexp(prod(dim(dem[[1]])[1:2]),dinM=rexp(prod(dim(dem[[1]])[1:2]))
 dem <- add_to_demography( dem, dt=1, restrict_patch, layer.ind=1,xy=c(1,1),r=10 )
 dem[[2]] <- restrict_patch(dem[[2]],layer.ind=2,xy=c(nrow(dem[[1]]),ncol(dem[[1]])),r=10)
 cat("t=",dem@t[1],"\n")
