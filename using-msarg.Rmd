@@ -1,0 +1,64 @@
+---
+title: "Using msarg to construct ms models of migration."
+author: Peter Ralph
+date: May 1, 2015
+---
+
+```{r setup, include=FALSE}
+source("msarg.R")
+fig.dim <- 5
+knitr::opts_chunk$set(fig.height=fig.dim,fig.width=2*fig.dim,fig.align='center')
+```
+
+The basic object is the population model for a given chunk of time.
+We'll just deal with sets of populations on a grid,
+so that will be a `gridArray` object.
+Let's make one, 
+with two layers,
+of a 30 x 20 grid,
+within-layer migration rates of 1 and between-layer rates of 0.1:
+```{r init_grid, fig.height=2*fig.dim}
+ga <- grid_array(nlayers=2,nrow=30,ncol=20,N=1000,mig.rate=1,admix.rate=0.1)
+plot(ga)
+```
+In the plot, the diagonal shows arrows weighted by migration rates within a given layer,
+and offdiagonals show circles with size proportional to the "admixture" migration between the relevant layers.
+This looks pretty boring because all the migration rates are the same,
+and isn't showing between-layer migration rates at the moment.
+So we have something to look at, let's 
+increase migration rates on one layer,
+and then restrict each layer to a circle
+centered on the two corners:
+```{r zero_circles, fig.height=2*fig.dim}
+ga <- modify_migration(ga,layer.ind=1,doutM=rexp(ncol(ga)),dinM=rexp(nrow(ga)))
+plot(ga)
+ga <- restrict_patch(ga,layer.ind=1,xy=c(1,1),r=10)
+ga <- restrict_patch(ga,layer.ind=2,xy=c(nrow(ga),ncol(ga)),r=10)
+plot(ga)
+```
+Note that each population also has an associated "exponential growth" rate.
+
+Now, here's an example of stringing these together into a model,
+with two time steps,
+and a `dt` of 1 between them.
+```{r init_dem}
+dem <- pop_to_dem( grid_array(nlayers=2,nrow=30,ncol=20,N=1000,mig.rate=1,admix.rate=0.1) )
+dem[[1]] <- modify_migration(dem[[1]],layer.ind=1,doutM=rexp(ncol(dem[[1]])),dinM=rexp(nrow(dem[[1]])))
+dem <- add_to_demography( dem, dt=1, restrict_patch, layer.ind=1,xy=c(1,1),r=10 )
+dem[[2]] <- restrict_patch(dem[[2]],layer.ind=2,xy=c(nrow(dem[[1]]),ncol(dem[[1]])),r=10)
+cat("t=",dem@t[1],"\n")
+plot(dem[[1]])
+cat("t=",dem@t[2],"\n")
+plot(dem[[2]])
+```
+
+We also have a function to convert these to ms command line parameters.
+To check this, let's try a smaller model.
+```{r ms_args}
+dem <- pop_to_dem( grid_array(nlayers=2,nrow=3,ncol=2,N=1000,mig.rate=1,admix.rate=0.1) )
+dem[[1]] <- modify_migration(dem[[1]],layer.ind=1,doutM=rexp(ncol(dem[[1]])),dinM=rexp(nrow(dem[[1]])))
+dem <- add_to_demography( dem, dt=1, restrict_patch, layer.ind=1,xy=c(1,1),r=1 )
+dem[[2]] <- restrict_patch(dem[[2]],layer.ind=2,xy=c(nrow(dem[[1]]),ncol(dem[[1]])),r=1)
+print( msarg(dem,theta=1000) )
+```
+
