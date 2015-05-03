@@ -10,6 +10,11 @@ fig.dim <- 5
 knitr::opts_chunk$set(fig.height=2*fig.dim,fig.width=2*fig.dim,fig.align='center')
 ```
 
+**To-do:**
+
+- make it so that lineages aren't stuck in removed populations (using -ej?)
+
+
 The basic object is the population model for a given chunk of time.
 We'll just deal with sets of populations on a grid,
 so that will be a `gridArray` object.
@@ -30,10 +35,10 @@ increase migration rates on one layer,
 and then restrict each layer to a circle
 centered on the two corners:
 ```{r zero_circles}
-ga <- modify_migration(ga,layer.ind=1,doutM=rexp(ncol(ga)*nrow(ga)),dinM=rexp(nrow(ga)*ncol(ga)))
+ga <- modify_migration(ga,layer=1,doutM=rexp(ncol(ga)*nrow(ga)),dinM=rexp(nrow(ga)*ncol(ga)))
 plot(ga)
-ga <- restrict_patch(ga,layer.ind=1,xy=c(1,1),r=10)
-ga <- restrict_patch(ga,layer.ind=2,xy=c(nrow(ga),ncol(ga)),r=10)
+ga <- restrict_patch(ga,layer=1,xy=c(1,1),r=10)
+ga <- restrict_patch(ga,layer=2,xy=c(nrow(ga),ncol(ga)),r=10)
 plot(ga)
 ```
 Note that each population also has an associated "exponential growth" rate.
@@ -47,26 +52,33 @@ plot(ga)
 ```
 
 Now, here's an example of stringing these together into a model,
-with two time steps,
-and a `dt` of 1 between them.
+with four model changes,
+and various `dt` between them:
 ```{r init_dem}
 dem <- pop_to_dem( grid_array(nlayers=2,nrow=30,ncol=20,N=1000,mig.rate=1,admix.rate=0.1) )
-dem[[1]] <- modify_migration(dem[[1]],layer.ind=1,doutM=rexp(prod(dim(dem[[1]])[1:2]),dinM=rexp(prod(dim(dem[[1]])[1:2]))
-dem <- add_to_demography( dem, dt=1, restrict_patch, layer.ind=1,xy=c(1,1),r=10 )
-dem[[2]] <- restrict_patch(dem[[2]],layer.ind=2,xy=c(nrow(dem[[1]]),ncol(dem[[1]])),r=10)
+dem[[1]] <- modify_migration(dem[[1]],layer=1,doutM=rexp(prod(dim(dem[[1]])[1:2])),dinM=rexp(prod(dim(dem[[1]])[1:2])))
+dem <- add_to_demography( dem, dt=2, add_barrier, layer=1, rows=10 )
+dem <- add_to_demography( dem, dt=1, restrict_patch, layer=1,xy=c(1,1),r=10 )
+dem[[3]] <- restrict_patch(dem[[3]],layer=2,xy=c(nrow(dem[[1]]),ncol(dem[[1]])),r=10)
+dem <- add_to_demography( dem, dt=2, identity )
+dem[[4]] <- dem[[1]]
 cat("t=",dem@t[1],"\n")
 plot(dem[[1]])
 cat("t=",dem@t[2],"\n")
 plot(dem[[2]])
+cat("t=",dem@t[3],"\n")
+plot(dem[[3]])
+cat("t=",dem@t[4],"\n")
+plot(dem[[4]])
 ```
 
 We also have a function to convert these to ms command line parameters.
 To check this, let's try a smaller model.
 ```{r ms_args}
 dem <- pop_to_dem( grid_array(nlayers=2,nrow=3,ncol=2,N=1000,mig.rate=1,admix.rate=0.1) )
-dem[[1]] <- modify_migration(dem[[1]],layer.ind=1,doutM=rexp(ncol(dem[[1]])),dinM=rexp(nrow(dem[[1]])))
-dem <- add_to_demography( dem, dt=1, restrict_patch, layer.ind=1,xy=c(1,1),r=1 )
-dem[[2]] <- restrict_patch(dem[[2]],layer.ind=2,xy=c(nrow(dem[[1]]),ncol(dem[[1]])),r=1)
+dem[[1]] <- modify_migration(dem[[1]],layer=1,doutM=rexp(ncol(dem[[1]])),dinM=rexp(nrow(dem[[1]])))
+dem <- add_to_demography( dem, dt=1, restrict_patch, layer=1,xy=c(1,1),r=1 )
+dem[[2]] <- restrict_patch(dem[[2]],layer=2,xy=c(nrow(dem[[1]]),ncol(dem[[1]])),r=1)
 print( msarg(dem,theta=1000) )
 ```
 

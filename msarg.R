@@ -135,10 +135,10 @@ setClass("popArray", representation(
 setClass("gridArray", contains="popArray")
 setMethod("dim", signature=c(x="gridArray"), definition=function (x) { x@npop } )
 setGeneric("layer_inds", function(x,...) { standardGeneric("layer_inds") })
-setMethod("layer_inds", signature=c(x="gridArray"), definition=function (x,layer.ind) {
+setMethod("layer_inds", signature=c(x="gridArray"), definition=function (x,layer) {
         nrow <- x@npop[1]
         ncol <- x@npop[2]
-        return( (layer.ind-1) * nrow * ncol + (1:(nrow*ncol)) )
+        return( (layer-1) * nrow * ncol + (1:(nrow*ncol)) )
     } )
 setMethod("plot", signature=c(x="gridArray"), definition=function(x,...) {
         # produces nlayers plots
@@ -180,14 +180,14 @@ plot_admixture_layer <- function (ga,j,k,admix.fac=1,...) {
     return(invisible(admixmat))
 }
 
-plot_layer <- function (ga,layer.ind,eps=0.05,lwd.fac=1,length=0.1,...) {
+plot_layer <- function (ga,layer,eps=0.05,lwd.fac=1,length=0.03,...) {
     # draw a picture of a migration matrix
-    layer.inds <- layer_inds(ga,layer.ind)
+    layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
     rowdummy <- row( Matrix(0,nrow=nrow,ncol=ncol) )
     coldummy <- col( Matrix(0,nrow=nrow,ncol=ncol) )
-    this.M <- ga@M[layer.inds,layer.inds]
+    this.M <- ga@M[layers,layers]
     x0 <- rowdummy[rowinds(this.M)]
     x1 <- rowdummy[colinds(this.M)]
     y0 <- coldummy[rowinds(this.M)]
@@ -229,65 +229,73 @@ grid_array <- function (nlayers, nrow, ncol, N, mig.rate, admix.rate, G=0) {
             npop=as.integer(c(nrow,ncol,nlayers)),
             N=N,
             G=G,
-            M=M
+            M=as(M,"dgCMatrix")  # avoids bugs with dgTMatrix subsetting
         ) )
 }
 
-modify_grid_layer <- function (ga, layer.ind, dN=1, dG=1, dM=1) {
+modify_grid_layer <- function (ga, layer, dN=1, dG=1, dM=1) {
     # modify a given layer of a grid_array
     # by multiplying N by dN, etcetera.
-    layer.inds <- layer_inds(ga,layer.ind)
+    layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
-    layer.inds <- (layer.ind-1) * nrow * ncol + (1:(nrow*ncol))
+    layers <- (layer-1) * nrow * ncol + (1:(nrow*ncol))
     dN <- rep_len(dN,nrow*ncol)
     dG <- rep_len(dG,nrow*ncol)
     dM <- rep_len(dM,(nrow*ncol)^2)
-    ga@N[layer.inds] <- ga@N[layer.inds] * dN
-    ga@G[layer.inds] <- ga@G[layer.inds] * dG
-    ga@M[layer.inds,layer.inds] <- ga@M[layer.inds,layer.inds] * dM
+    ga@N[layers] <- ga@N[layers] * dN
+    ga@G[layers] <- ga@G[layers] * dG
+    ga@M[layers,layers] <- ga@M[layers,layers] * dM
     return(ga)
 }
 
-add_barrier <- function (ga, layer.ind, rows=numeric(0), cols=numeric(0)) {
+add_barrier <- function (ga, layer, rows=numeric(0), cols=numeric(0)) {
     # remove migration between rows and rows+1 and cols and cols+1
-    layer.inds <- layer_inds(ga,layer.ind)
+    layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
     dummy <- Matrix(0,nrow=nrow,ncol=ncol)
-    dM <- ifelse( outer( (row(dummy) %in% rows), (col(dummy) %in% cols), "*" ), 0, 1 )
-    ga@M[layer.inds,layer.inds] <- ga@M[layer.inds,layer.inds] * dM
+    for (rn in rows) {
+        zeros <- ( ( rowinds(ga@M) %in% ( (layer-1)*nrow*ncol + which(row(dummy)==rn) ) ) & ( colinds(ga@M) %in% ( (layer-1)*nrow*ncol + which(row(dummy)==rn+1) ) ) )
+        zeros <- zeros | ( ( rowinds(ga@M) %in% ( (layer-1)*nrow*ncol + which(row(dummy)==rn+1) ) ) & ( colinds(ga@M) %in% ( (layer-1)*nrow*ncol + which(row(dummy)==rn) ) ) )
+        ga@M@x[zeros] <- 0
+    }
+    for (cn in cols) {
+        zeros <- ( ( rowinds(ga@M) %in% ( (layer-1)*nrow*ncol + which(col(dummy)==cn) ) ) & ( colinds(ga@M) %in% ( (layer-1)*nrow*ncol + which(col(dummy)==cn+1) ) ) )
+        zeros <- zeros | ( ( rowinds(ga@M) %in% ( (layer-1)*nrow*ncol + which(col(dummy)==cn+1) ) ) & ( colinds(ga@M) %in% ( (layer-1)*nrow*ncol + which(col(dummy)==cn) ) ) )
+        ga@M@x[zeros] <- 0
+    }
     return(ga)
 }
 
-modify_migration <- function (ga, layer.ind, doutM=1, dinM=1) {
+modify_migration <- function (ga, layer, doutM=1, dinM=1) {
     # modify inmigration rates on a given layer:
     #   here, dinM is a vector of multiplicative changes to inmigration rates 
     #   here, doutM is a vector of multiplicative changes to outmigration rates 
     # recall that "m ij is the fraction of subpopulation i made up of migrants each generation from subpopulation j."
     #   so that 'inmigration', in proper, forwards, time is m[i,]
     #   and 'outmigration', in proper, forwards, time is m[,j].
-    layer.inds <- layer_inds(ga,layer.ind)
+    layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
     dinM <- rep_len(dinM,nrow*ncol)
     doutM <- rep_len(doutM,nrow*ncol)
     dM <- outer(dinM,doutM,"*")
-    ga@M[layer.inds,layer.inds] <- ga@M[layer.inds,layer.inds] * dM
+    ga@M[layers,layers] <- ga@M[layers,layers] * dM
     return(ga)
 }
 
-restrict_patch <- function (ga, layer.ind, xy, r) {
+restrict_patch <- function (ga, layer, xy, r) {
     # zero out mutation rates to/from all populations 
     #   more than distance r from (row,col) location xy
-    layer.inds <- layer_inds(ga,layer.ind)
+    layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
     rowdummy <- row( Matrix(0,nrow=nrow,ncol=ncol) )
     coldummy <- col( Matrix(0,nrow=nrow,ncol=ncol) )
     base.ind <- which( ( rowdummy == xy[1] ) & ( coldummy == xy[2] ) )
     gdists <- sqrt( (rowdummy-xy[1])^2 + (coldummy-xy[2])^2 )
-    zero.these <- layer.inds[ gdists > r ]
+    zero.these <- layers[ gdists > r ]
     ga@M[zero.these,] <- 0.0
     ga@M[,zero.these] <- 0.0
     return(ga)

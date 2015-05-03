@@ -1,3 +1,5 @@
+all : using-msarg.html
+
 %.html : %.md
 	pandoc $< > $@
 
