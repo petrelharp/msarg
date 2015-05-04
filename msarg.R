@@ -19,7 +19,7 @@ setMethod("length", signature=c(x="demography"), definition=function (x) { lengt
 setMethod("[[", signature=c(x="demography",i="ANY"), definition=function (x,i) { x@popStates[[i]] } )
 setMethod("[[<-", signature=c(x="demography",i="ANY",value="ANY"), definition=function (x,i,value) { x@popStates[[i]]<-value; return(x) } )
 
-add_to_demography <- function (dem,dt,fn,...,tnew=if(length(dem@t)>0){dem@t[length(dem@t)]}else{0}+dt) {
+add_to_demography <- function (dem,dt,fn,...,tnew=dt+if(length(dem@t)>0){dem@t[length(dem@t)]}else{0}) {
     # add to a demography by applying a modifier function fn to the previous state
     if (inherits(dem,"popArray")) {
         dem <- new("demography",popStates=list(dem),t=numeric(0))
@@ -32,13 +32,20 @@ add_to_demography <- function (dem,dt,fn,...,tnew=if(length(dem@t)>0){dem@t[leng
 
 pop_to_dem <- function (ga,t) { new("demography",popStates=list(ga),t=numeric(0)) }
 
+### Stuff for writing ms arguments
 setClass("msarg", contains="namedList")
-setMethod("print", signature=c(x="msarg"), definition=function (x,collapse="\n") {
-        cat( paste( paste(names(x),sapply(lapply(x,unlist),paste,collapse=' ')), collapse=collapse ), "\n" )
+setMethod("toString", signature=c(x="msarg"), definition=function (x,sep="\n") {
+        text.x <-  paste( paste( paste(names(x),sapply(lapply(x,unlist),paste,collapse=' ')), collapse=sep ), "\n", sep='' )
+        return(invisible(text.x))
+    } )
+setMethod("print", signature=c(x="msarg"), definition=function (x,sep="\n",...) {
+        text.x <-  toString(x,sep=sep)
+        cat( text.x, ... )
+        return(invisible(text.x))
     } )
 
 setGeneric("msarg", function(x,...) { standardGeneric("msarg") })
-setMethod("msarg", signature=c(x="demography"), definition=function (x,theta,...) {
+setMethod("msarg", signature=c(x="demography"), definition=function (x,nsamp,scale.migration=TRUE,...) {
         ## FROM ms:
         # usage: ms nsam howmany 
         #   Options: 
@@ -71,28 +78,29 @@ setMethod("msarg", signature=c(x="demography"), definition=function (x,theta,...
         # 	  -f filename     ( Read command line arguments from file filename.)
         # 	  -p n ( Specifies the precision of the position output.  n is the number of digits after the decimal.)
         arglist <- c( list(
-                        "-t"=theta,
-                        "-I"=c( prod(x[[1]]@npop), x[[1]]@N )
+                        "-I"=c( prod(x[[1]]@npop), nsamp )
                         ),
-                    msarg_G(x[[1]]@G),
-                    msarg_M(x[[1]]@M)
+                    msarg_N(x[[1]]),  # note that N must come before G, as N sets G to zero.
+                    msarg_G(x[[1]]),
+                    msarg_M(x[[1]],scale.migration=scale.migration)
                 )
         for (k in seq_along(x@t)) {
             t <- x@t[k]
             arglist <- c( 
                     arglist,
-                    msarg_N(x[[k+1]]@N,t,old.N=x[[k]]@N),
-                    msarg_M(x[[k+1]]@M,t),
-                    msarg_G(x[[k+1]]@G,t,old.G=x[[k]]@G)
+                    msarg_N(x[[k+1]],t,previous=x[[k]]),  # note that N must come before G, as N sets G to zero.
+                    msarg_G(x[[k+1]],t,previous=x[[k]]),
+                    msarg_M(x[[k+1]],t,previous=x[[k]],scale.migration=scale.migration)
                 )
         }
         return(new("msarg",.Data=arglist,names=names(arglist)))
     } )
 
-msarg_N <- function (N,t=numeric(0),old.N) {
+msarg_N <- function (ga,t=numeric(0),previous) {
     # Ns that haven't changed don't matter
+    N <- ga@N
     # so only output the relevant -eg commands
-    dothese <- if (missing(old.N)) { seq_along(N) } else { which(N!=old.N) }
+    dothese <- if (missing(previous)) { seq_along(N) } else { which(N!=previous@N) }
     Narg <- lapply( seq_along(dothese), function (k) {
             c( t, dothese[k], N[k] )
         } )
@@ -100,10 +108,11 @@ msarg_N <- function (N,t=numeric(0),old.N) {
     return(Narg)
 }
 
-msarg_G <- function (G,t=numeric(0),old.G) {
+msarg_G <- function (ga,t=numeric(0),previous) {
     # Gs that haven't changed don't matter
     # so only output the relevant -eg commands
-    dothese <- if (missing(old.G)) { seq_along(G) } else { which(G!=old.G) }
+    G <- ga@G
+    dothese <- if (missing(previous)) { seq_along(G) } else { which(G!=previous@G) }
     Garg <- lapply( seq_along(dothese), function (k) {
             c( t, dothese[k], G[k] )
         } )
@@ -111,17 +120,64 @@ msarg_G <- function (G,t=numeric(0),old.G) {
     return(Garg)
 }
 
-msarg_M <- function (M,t=numeric(0)) {
+msarg_M <- function (ga,t=numeric(0),previous,scale.migration=TRUE) {
     # M is a sparse matrix,
-    # so only output the relevant -em commands
-    rind <- rowinds(M)
+    #   so only output the relevant -em commands
+    # also: need to transpose and scale by population sizes
+    #   since M is forwards-times migration rates,
+    #   and ms takes revese-time ("lineage") migration rates.
+    # (optionally skip this step to allow ms-style migration input)
+    M <- if (scale.migration) { t(lineage_M(ga)) } else { ga@M }
+    rind <- rowinds(M)  # yes this is inefficient
     cind <- colinds(M)
-    Marg <- lapply( 1:length(M@x), function (k) {
+    dothese <- if (missing(previous)) {
+            seq_along(M@x)
+        } else {
+            old.M <- lineage_M(previous)
+            which( (M@x != old.M@x) | (rind!=rowinds(old.M)) | (cind!=colinds(old.M)) )
+        }
+    Marg <- lapply( dothese, function (k) {
             c( t, rind[k], cind[k], M@x[k] )
         } )
     names( Marg ) <- rep(if (length(t)>0){"-em"}else{"-m"},length(Marg))
     return(Marg)
 }
+
+lineage_M <- function (ga) {
+    M <- ga@M
+    rind <- rowinds(M)
+    cind <- colinds(M)
+    M@x <- M@x * ga@N[rind] / ga@N[cind]  # scale by pop sizes
+    return(M)
+}
+
+### stuff for calling ms
+# general strategy is: put everything in a subdirectory
+
+setGeneric("run_ms", function(x,...) { standardGeneric("run_ms") })
+setMethod("run_ms", signature=c(x="popArray"), definition=function (x,...) { run_ms(pop_to_dem(x),...) } )
+setMethod("run_ms", signature=c(x="demography"), definition=function (x,nsamp,outdir,theta,trees=FALSE,nreps=1,tofile=TRUE,...) {
+        msarg <- msarg(x,nsamp,...)
+        if (tofile) {
+            if (missing(outdir)) {
+                while (TRUE) {
+                    outdir <- paste( "msarg", formatC( 1e6*runif(1), width=6, format='d', flag='0' ), sep="_" )
+                    if (!file.exists(outdir)) { break }
+                }
+            }
+            dir.create(outdir,showWarnings=FALSE)
+            msarg.file <- file.path(outdir,"msarg.txt")
+            print(msarg,file=msarg.file,sep='  ')
+        }
+        ms.call <- paste( "ms", sum(nsamp), nreps, 
+            if (!missing(theta)) { paste("-t",theta) } else {""},
+            if (trees) { "-T" } else {""},
+            if (tofile) { paste("-f", msarg.file) } else { toString(msarg,sep=' ') },
+            if (tofile) { paste( ">", file.path(outdir,"msoutput.txt") ) } else { "" } 
+            ) 
+        system( ms.call, intern=TRUE )
+    } )
+
 
 
 # The state of a demographic model at a given point in time:
@@ -174,34 +230,52 @@ plot_admixture_layer <- function (ga,j,k,admix.fac=1,...) {
     coldummy <- col( Matrix(0,nrow=nrow,ncol=ncol) )
     li.j <- layer_inds(ga,j)
     li.k <- layer_inds(ga,k)
-    admixmat <- diag( ga@M[li.j,li.k] )
+    admixmat <- diag( x=ga@M[li.j,li.k], nrow=length(li.j) )
     dim(admixmat) <- c(nrow,ncol)
     plot( row(admixmat), col(admixmat), cex=admix.fac*admixmat, xaxt='n', yaxt='n', xlab='', ylab='', asp=1 )
     return(invisible(admixmat))
 }
 
-plot_layer <- function (ga,layer,eps=0.05,lwd.fac=1,length=0.03,...) {
+plot_layer <- function (ga,layer,eps=0.05,lwd.fac=1,cex.fac=2/quantile(ga@N,.9),length=0.03,alpha=0.05,N.eps=1e-3,...) {
     # draw a picture of a migration matrix
     layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
-    rowdummy <- row( Matrix(0,nrow=nrow,ncol=ncol) )
-    coldummy <- col( Matrix(0,nrow=nrow,ncol=ncol) )
-    this.M <- ga@M[layers,layers]
-    x0 <- rowdummy[rowinds(this.M)]
-    x1 <- rowdummy[colinds(this.M)]
-    y0 <- coldummy[rowinds(this.M)]
-    y1 <- coldummy[colinds(this.M)]
-    upshift <- eps*(y1-y0)
-    rightshift <- eps*(x1-x0)
-    plot(as.vector(rowdummy),as.vector(coldummy),pch=20,xlim=c(0,nrow+1),ylim=c(0,ncol+1),asp=1,xaxt='n',yaxt='n',xlab='',ylab='')
-    arrows( x0=x0+upshift, x1=x1+upshift,
-       y0=y0+rightshift, y1=y1+rightshift,
-       lwd=lwd.fac*this.M@x, length=length, ... )
+    lineage.M <- lineage_M(ga)
+    # for plotting purposes, remove lineage migration rates between 'zeroed' populations.
+    if (any(ga@N<=N.eps)) {
+        lineage.M[ga@N<=N.eps,] <- 0.0
+        lineage.M[,ga@N<=N.eps] <- 0.0  
+    }
+    if (nrow==1 && ncol==1) {
+        plot( 0, type='n', xlab='', ylab='', xaxt='n', yaxt='n' )
+    } else {
+        rowdummy <- row( Matrix(0,nrow=nrow,ncol=ncol) )
+        coldummy <- col( Matrix(0,nrow=nrow,ncol=ncol) )
+        this.M <- ga@M[layers,layers]
+        rind <- rowinds(this.M)
+        cind <- colinds(this.M)
+        this.lin.M <- lineage.M[layers,layers][cbind(rind,cind)]
+        x0 <- rowdummy[rind]
+        x1 <- rowdummy[cind]
+        y0 <- coldummy[rind]
+        y1 <- coldummy[cind]
+        upshift <- eps*(y1-y0)
+        rightshift <- eps*(x1-x0)
+        plot(
+            as.vector(rowdummy),as.vector(coldummy),
+            cex=cex.fac*ga@N[layers],
+            pch=20,xlim=c(0,nrow+1),ylim=c(0,ncol+1),
+            asp=1,xaxt='n',yaxt='n',xlab='',ylab='')
+        arrows( x0=x0+upshift, x1=x1+upshift,
+            y0=y0+rightshift, y1=y1+rightshift,
+            col=sapply((this.lin.M/max(lineage.M@x,na.rm=TRUE))^alpha,function(a){adjustcolor("black",a)}),
+            lwd=lwd.fac*this.M@x, length=length, ... )
+    }
 }
 
 
-grid_array <- function (nlayers, nrow, ncol, N, mig.rate, admix.rate, G=0) {
+grid_array <- function (nlayers, nrow, ncol, N=1, mig.rate, admix.rate, G=0) {
     # make a gridArray object
     # consisting of a stack of (nrow x ncol) grids
     #   each having migration rate 'mig.rate' between adjacents
@@ -219,6 +293,11 @@ grid_array <- function (nlayers, nrow, ncol, N, mig.rate, admix.rate, G=0) {
     G <- rep_len(G,nn*nlayers)
     # start to build the migration matrix
     M <- kronecker( admix.rate, Diagonal(n=nn,x=1) )
+    # avoid bugs with dgTMatrix subsetting
+    if (class(M)=="dtTMatrix") { # no method for going from dtTMatrix to dgCMatrix??
+        M <- as(M,"dgTMatrix")
+    }
+    M <- as(M,"dgCMatrix")
     adj <- grid.adjacency(nrow,ncol,diag=FALSE)
     for (k in 1:nlayers) {
         M[ (k-1)*nn+(1:nn), (k-1)*nn+(1:nn) ] <- mig.rate[k] * adj
@@ -229,7 +308,7 @@ grid_array <- function (nlayers, nrow, ncol, N, mig.rate, admix.rate, G=0) {
             npop=as.integer(c(nrow,ncol,nlayers)),
             N=N,
             G=G,
-            M=as(M,"dgCMatrix")  # avoids bugs with dgTMatrix subsetting
+            M=M
         ) )
 }
 
@@ -272,22 +351,20 @@ modify_migration <- function (ga, layer, doutM=1, dinM=1) {
     # modify inmigration rates on a given layer:
     #   here, dinM is a vector of multiplicative changes to inmigration rates 
     #   here, doutM is a vector of multiplicative changes to outmigration rates 
-    # recall that "m ij is the fraction of subpopulation i made up of migrants each generation from subpopulation j."
-    #   so that 'inmigration', in proper, forwards, time is m[i,]
-    #   and 'outmigration', in proper, forwards, time is m[,j].
     layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
     dinM <- rep_len(dinM,nrow*ncol)
     doutM <- rep_len(doutM,nrow*ncol)
-    dM <- outer(dinM,doutM,"*")
+    dM <- outer(doutM,dinM,"*")
     ga@M[layers,layers] <- ga@M[layers,layers] * dM
     return(ga)
 }
 
-restrict_patch <- function (ga, layer, xy, r) {
-    # zero out mutation rates to/from all populations 
+restrict_patch <- function (ga, layer, xy, r, eps=1e-3) {
+    # "zero" out all populations
     #   more than distance r from (row,col) location xy
+    # note that eps should be much smaller than the smallest N that corresponds to a real population.
     layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
@@ -296,8 +373,7 @@ restrict_patch <- function (ga, layer, xy, r) {
     base.ind <- which( ( rowdummy == xy[1] ) & ( coldummy == xy[2] ) )
     gdists <- sqrt( (rowdummy-xy[1])^2 + (coldummy-xy[2])^2 )
     zero.these <- layers[ gdists > r ]
-    ga@M[zero.these,] <- 0.0
-    ga@M[,zero.these] <- 0.0
+    ga@N[zero.these] <- eps
     return(ga)
 }
 
