@@ -15,22 +15,27 @@ setClass("demography", representation(
         t="numeric"             # vector of lengths of times ago of transitions between the states
     ) )
 
+setMethod("dim", signature=c(x="demography"), definition=function (x) { dim(x[[1]]) } )
 setMethod("length", signature=c(x="demography"), definition=function (x) { length(x@t) } )
 setMethod("[[", signature=c(x="demography",i="ANY"), definition=function (x,i) { x@popStates[[i]] } )
 setMethod("[[<-", signature=c(x="demography",i="ANY",value="ANY"), definition=function (x,i,value) { x@popStates[[i]]<-value; return(x) } )
 
-add_to_demography <- function (dem,dt,fn,...,tnew=dt+if(length(dem@t)>0){dem@t[length(dem@t)]}else{0}) {
-    # add to a demography by applying a modifier function fn to the previous state
+add_to_demography <- function (dem,dt,fn=identity,pop,...,tnew=dt+if(length(dem@t)>0){dem@t[length(dem@t)]}else{0}) {
+    # add to a demography by applying a modifier function fn 
+    #  to another population model,
+    #  by default the previous state
     if (inherits(dem,"popArray")) {
         dem <- new("demography",popStates=list(dem),t=numeric(0))
     }
     nt <- length(dem@popStates)
-    dem@popStates <- c( dem@popStates, fn(dem@popStates[[nt]],...) )
+    if (missing(pop)) { pop <- dem@popStates[[nt]] }
+    dem@popStates <- c( dem@popStates, fn(pop,...) )
+    stopifnot( tnew >= max(c(0,dem@t)) )
     dem@t <- c(dem@t,tnew)
     return(dem)
 }
 
-pop_to_dem <- function (ga,t) { new("demography",popStates=list(ga),t=numeric(0)) }
+demography <- function (ga,t) { new("demography",popStates=list(ga),t=numeric(0)) }
 
 ### Stuff for writing ms arguments
 setClass("msarg", contains="namedList")
@@ -77,8 +82,13 @@ setMethod("msarg", signature=c(x="demography"), definition=function (x,nsamp,sca
         # 		  size, alpha and M are unchanged.
         # 	  -f filename     ( Read command line arguments from file filename.)
         # 	  -p n ( Specifies the precision of the position output.  n is the number of digits after the decimal.)
+        if (NCOL(nsamp)==4) {
+            # assume this is in sample.config format
+            nsamp <- nsample_vector(x[[1]],nsamp)
+        }
+        stopifnot( length(nsamp) ==  prod(dim(x[[1]])) )
         arglist <- c( list(
-                        "-I"=c( prod(x[[1]]@npop), nsamp )
+                        "-I"=c( prod(dim(x[[1]])), nsamp )
                         ),
                     msarg_N(x[[1]]),  # note that N must come before G, as N sets G to zero.
                     msarg_G(x[[1]]),
@@ -96,9 +106,11 @@ setMethod("msarg", signature=c(x="demography"), definition=function (x,nsamp,sca
         return(new("msarg",.Data=arglist,names=names(arglist)))
     } )
 
-msarg_N <- function (ga,t=numeric(0),previous) {
+msarg_N <- function (ga,t=numeric(0),previous,eps=min(ga@N[ga@N>0])/1000) {
     # Ns that haven't changed don't matter
+    #   and replace zeros with eps
     N <- ga@N
+    N[N<=0] <- eps
     # so only output the relevant -eg commands
     dothese <- if (missing(previous)) { seq_along(N) } else { which(N!=previous@N) }
     Narg <- lapply( seq_along(dothese), function (k) {
@@ -110,7 +122,8 @@ msarg_N <- function (ga,t=numeric(0),previous) {
 
 msarg_G <- function (ga,t=numeric(0),previous) {
     # Gs that haven't changed don't matter
-    # so only output the relevant -eg commands
+    #   so only output the relevant -eg commands
+    # This could be more efficient, omitting zeros at the start, etc.
     G <- ga@G
     dothese <- if (missing(previous)) { seq_along(G) } else { which(G!=previous@G) }
     Garg <- lapply( seq_along(dothese), function (k) {
@@ -143,11 +156,11 @@ msarg_M <- function (ga,t=numeric(0),previous,scale.migration=TRUE) {
     return(Marg)
 }
 
-lineage_M <- function (ga) {
+lineage_M <- function (ga,eps=min(ga@N[ga@N>0])/1000) {
     M <- ga@M
     rind <- rowinds(M)
     cind <- colinds(M)
-    M@x <- M@x * ga@N[rind] / ga@N[cind]  # scale by pop sizes
+    M@x <- M@x * (ga@N[rind]+eps) / (ga@N[cind]+eps)  # scale by pop sizes
     return(M)
 }
 
@@ -155,8 +168,12 @@ lineage_M <- function (ga) {
 # general strategy is: put everything in a subdirectory
 
 setGeneric("run_ms", function(x,...) { standardGeneric("run_ms") })
-setMethod("run_ms", signature=c(x="popArray"), definition=function (x,...) { run_ms(pop_to_dem(x),...) } )
+setMethod("run_ms", signature=c(x="popArray"), definition=function (x,...) { run_ms(demography(x),...) } )
 setMethod("run_ms", signature=c(x="demography"), definition=function (x,nsamp,outdir,theta,trees=FALSE,nreps=1,tofile=TRUE,...) {
+        if (NCOL(nsamp)==4) {
+            # assume this is in sample.config format
+            nsamp <- nsample_vector(x[[1]],nsamp)
+        }
         msarg <- msarg(x,nsamp,...)
         if (tofile) {
             if (missing(outdir)) {
@@ -165,6 +182,7 @@ setMethod("run_ms", signature=c(x="demography"), definition=function (x,nsamp,ou
                     if (!file.exists(outdir)) { break }
                 }
             }
+            cat("Outputting to ", outdir, " .\n")
             dir.create(outdir,showWarnings=FALSE)
             msarg.file <- file.path(outdir,"msarg.txt")
             print(msarg,file=msarg.file,sep='  ')
@@ -175,9 +193,18 @@ setMethod("run_ms", signature=c(x="demography"), definition=function (x,nsamp,ou
             if (tofile) { paste("-f", msarg.file) } else { toString(msarg,sep=' ') },
             if (tofile) { paste( ">", file.path(outdir,"msoutput.txt") ) } else { "" } 
             ) 
-        system( ms.call, intern=TRUE )
+        ms.results <- system( ms.call, intern=TRUE )
+        return( if (tofile) { invisible(outdir) } else { ms.results } )
     } )
 
+trees_from_ms <- function (ms.output) {
+    # extract the trees from ms.output
+    if ( (length(ms.output)==1) && (file.exists(ms.output)) ) {
+        ms.output <- scan(ms.output,what='char')
+    }
+    almost <- which( grepl("^//",ms.output) )
+    lapply( ms.output[almost+1], function (x) { ape::read.tree(text=x) } )
+}
 
 
 # The state of a demographic model at a given point in time:
@@ -190,19 +217,23 @@ setClass("popArray", representation(
 
 setClass("gridArray", contains="popArray")
 setMethod("dim", signature=c(x="gridArray"), definition=function (x) { x@npop } )
+setGeneric("nlayers", function(x,...) { standardGeneric("nlayers") })
+setMethod("nlayers", signature=c(x="gridArray"), definition=function (x) { dim(x)[3] } )
 setGeneric("layer_inds", function(x,...) { standardGeneric("layer_inds") })
 setMethod("layer_inds", signature=c(x="gridArray"), definition=function (x,layer) {
         nrow <- x@npop[1]
         ncol <- x@npop[2]
         return( (layer-1) * nrow * ncol + (1:(nrow*ncol)) )
     } )
-setMethod("plot", signature=c(x="gridArray"), definition=function(x,...) {
+setMethod("plot", signature=c(x="gridArray"), definition=function(x,layers=seq_len(nlayers(x)),do.layout=TRUE,...) {
         # produces nlayers plots
-        nlayers <- dim(x)[3]
-        layout(matrix(1:(nlayers^2),nrow=nlayers))
-        par(oma=c(0.5,0.5,0.5,0.5),mar=c(0.1,0.1,0.1,0.1))
-        for (k in 1:nlayers) {
-            for (j in 1:nlayers) {
+        nlayers <- nlayers(x)
+        if (do.layout) {
+            layout(matrix(1:(nlayers^2),nrow=nlayers))
+            opar <- par(oma=c(0.5,0.5,0.5,0.5),mar=c(0.1,0.1,0.1,0.1))
+        }
+        for (k in layers) {
+            for (j in layers) {
                 if (k==j) {
                     plot_layer(x,j,...)
                 } else {
@@ -210,6 +241,7 @@ setMethod("plot", signature=c(x="gridArray"), definition=function(x,...) {
                 }
             }
         }
+        if (do.layout) { par(opar) }
     } )
 
 # methods to get row and column indices of nonzero entries of a (sparse) dgCMatrix
@@ -275,7 +307,7 @@ plot_layer <- function (ga,layer,eps=0.05,lwd.fac=1,cex.fac=2/quantile(ga@N,.9),
 }
 
 
-grid_array <- function (nlayers, nrow, ncol, N=1, mig.rate, admix.rate, G=0) {
+grid_array <- function (nlayers=1, nrow, ncol, N=1, mig.rate=0, admix.rate=0, G=0) {
     # make a gridArray object
     # consisting of a stack of (nrow x ncol) grids
     #   each having migration rate 'mig.rate' between adjacents
@@ -361,10 +393,9 @@ modify_migration <- function (ga, layer, doutM=1, dinM=1) {
     return(ga)
 }
 
-restrict_patch <- function (ga, layer, xy, r, eps=1e-3) {
-    # "zero" out all populations
+restrict_patch <- function (ga, layer, xy, r) {
+    # zero out all populations
     #   more than distance r from (row,col) location xy
-    # note that eps should be much smaller than the smallest N that corresponds to a real population.
     layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
@@ -373,10 +404,50 @@ restrict_patch <- function (ga, layer, xy, r, eps=1e-3) {
     base.ind <- which( ( rowdummy == xy[1] ) & ( coldummy == xy[2] ) )
     gdists <- sqrt( (rowdummy-xy[1])^2 + (coldummy-xy[2])^2 )
     zero.these <- layers[ gdists > r ]
-    ga@N[zero.these] <- eps
+    ga@N[zero.these] <- 0
     return(ga)
 }
 
+##
+# stuff for selecting sample locations
+# format:
+#  row column layer n
+#   1    1      1   10
+#   2    4      1   12
+#   ....
+
+plot_sample_config <- function ( dem, sample.config, sample.cols=rainbow(nrow(sample.config)), add=FALSE, ... ) {
+    # first put in the same order as processed by ms:
+    sample.config <- sample.config[do.call(order,list(sample.config[,1],sample.config[,2],sample.config[,3])),]
+    if (!add) { 
+        plot( sample.config[,1:2], type='n', xlim=c(0,nrow(dem)+1), ylim=c(0,ncol(dem)+1), xlab='', ylab='', xaxt='n', yaxt='n', asp=1, bty='n' ) 
+        rect( xleft=1, ybottom=1, xright=nrow(dem), ytop=ncol(dem) )
+    }
+    text( sample.config[,1:2], 
+            labels=tapply( seq_len(sum(sample.config[,4])), rep(1:nrow(sample.config),sample.config[,4]), paste, collapse=',' ),
+            col=sample.cols )
+}
+
+nsample_vector <- function (ga, samps, dims=dim(ga)) {
+    # samps is a four-column matrix,
+    #    of row number, column number, layer number, and number of samples.
+    # returns a vector with length equal to the number of demes in ga
+    #    that gives the number of samples in each  (this is probably quite long!)
+    if (nrow(samps) != nrow(unique(samps))) {
+        stop("Sampling locations are not unique.")
+    }
+    sample.config <- array(0,dim=dims)
+    sample.config[ as.matrix(samps)[,1:3] ] <- samps[,4]
+    return( as.vector(sample.config) )
+}
+
+sample_locations <- function (ga, n, each=1, dims=dim(ga)) {
+    # Sample uniformly at random, with replacement, `n` locations to sample from.
+    n <- each * tabulate( sample.int( prod(dims), n, replace=TRUE ), nbins=prod(dims) )
+    x <- arrayInd( which(n>0), .dim=dims )
+    colnames(x) <- c("row","col","layer")
+    return( cbind(x,n=n[n>0]) )
+}
 
 ##
 # stuff to make a grid matrix

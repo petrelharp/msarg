@@ -1,0 +1,104 @@
+---
+title: "Simulating parallel universes with ms"
+author: Peter Ralph
+date: May 4, 2015
+---
+
+
+```{r setup, include=FALSE}
+require(ape)
+source("msarg.R")
+fig.dim <- 5
+knitr::opts_chunk$set(fig.height=fig.dim,fig.width=2*fig.dim,fig.align='center')
+```
+
+**Scenario:** 
+Parallel "universe" lattices with some migration between "universes" in a zone of "universe" overlap.
+
+A demographic model is a list of population models on the same grid, with a bit more information (time to switch for each).
+The way to build a demographic model is to:
+
+1. Start with a grid,
+2. then moving backwards in time, copy the last state, 
+3. then modify it.
+
+The function `add_to_demography` does this copy-and-modify step;
+and demographic models can be modified directly by subsetting.
+
+
+Building the demographic model
+==============================
+
+Initialization
+--------------
+
+First, let's choose the parameters for the grid:
+```{r params}
+nrow <- 100               # width of grid
+ncol <- 40                # height of grid
+overlap.size <- 20        # with of the overlap (in the middle)
+admix.rate <- 0.05
+mig.rate <- 1
+```
+
+Now, set up the grid.
+```{r init_grid}
+ga <- grid_array(nlayers=2,nrow=nrow,ncol=ncol,N=1,mig.rate=mig.rate,admix.rate=admix.rate) 
+plot(ga)
+```
+
+Create the overlap
+------------------
+
+Then, we modify that first state, by zeroing out populations in each layer where we don't want them.
+We do this by creating 'masks' for each and using `modify_grid_layer`, which multiplies `N` by the mask we pass in with `dN`:
+```{r modify_layers}
+mask.1 <- mask.2 <- matrix(1,nrow=nrow(ga),ncol=ncol(ga))
+mask.1[row(mask.1) > nrow(ga)/2+overlap.size/2] <- 0
+mask.2[row(mask.1) < nrow(ga)/2-overlap.size/2] <- 0
+ga <- modify_grid_layer( ga, layer=1, dN=mask.1 )
+ga <- modify_grid_layer( ga, layer=2, dN=mask.2 )
+plot(ga)
+```
+
+Simulating with ms
+==================
+
+Trees, in R
+-----------
+
+Since we've only got one, unchanging, demographic scenario,
+we don't have to make a special `demography` object.
+We'll use a convenience function to pick some random sampling locations,
+two each from 30 random locations.
+```{r sample_config}
+sample.config <- sample_locations( ga, n=30, each=2 )
+sample.cols <- rainbow(nrow(sample.config))
+sample.config
+```
+With this in hand, we can run `ms`.
+We'll ask it to output trees, not sequence.
+For some reason, it gives an error if we keep it all in `R`: 
+maybe the string of parameters is too long?
+(Using `tofile=TRUE` puts the parameters in a file, passed to `ms` via `-f`.)
+```{r tree_msarg}
+ms.output <- run_ms( ga, nsamp=sample.config, trees=TRUE, nreps=3 )
+tree.output <- trees_from_ms( file.path(ms.output,"msoutput.txt") )
+layout(t(1:2))
+for (tree in tree.output) {
+    plot_sample_config( ga, sample.config )
+    abline(v=(nrow(ga)+c(1,-1)*overlap.size)/2, lty=2, lwd=2, col='grey')
+    ape::plot.phylo( tree, tip.color=sample.cols[findInterval(as.numeric(tree$tip.label),1+c(0,cumsum(sample.config[,4])))] )
+    ape::axisPhylo(1)
+}
+```
+
+Sequence, to a file
+-------------------
+
+To get sequence, we could do as follows,
+this time outputting to a directory:
+```{r seq_msarg}
+ms.output <- run_ms( ga, nsamp=sample.config, theta=0.01 )
+cat(paste(scan(file.path(ms.output,"msoutput.txt"),what='char',sep='\n'),collapse='\n'))
+```

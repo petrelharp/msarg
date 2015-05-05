@@ -1,0 +1,118 @@
+---
+title: "Simulating a barrier with ms"
+author: Peter Ralph
+date: May 4, 2015
+---
+
+
+```{r setup, include=FALSE}
+require(ape)
+source("msarg.R")
+fig.dim <- 5
+knitr::opts_chunk$set(fig.height=fig.dim,fig.width=2*fig.dim,fig.align='center')
+```
+
+**Scenario:** 
+Two halves of a lattice that are divided at some point in the past by a barrier to migration, 
+and then, closer to the present, that barrier is removed and they start to flow back into one another.
+
+A demographic model is a list of population models on the same grid, with a bit more information (time to switch for each).
+The way to build a demographic model is to:
+
+1. Start with a grid,
+2. then moving backwards in time, copy the last state, 
+3. then modify it.
+
+The function `add_to_demography` does this copy-and-modify step;
+and demographic models can be modified directly by subsetting.
+
+
+Building the demographic model
+==============================
+
+Initialization
+--------------
+
+First, let's choose the parameters for the grid:
+```{r params}
+nrow <- 30                # width of grid
+ncol <- 20                # height of grid
+barrier.time <- 3         # time ago the barrier ended
+rejoin.time <- 5          # time ago the barrier began
+barrier.rows <- c(10,20)  # locations of the barrier
+```
+
+Now, we will initialize the demographic model with a grid:
+```{r init_grid}
+dem <- demography( grid_array(nlayers=1,nrow=nrow,ncol=ncol,N=1,mig.rate=1) )
+plot(dem[[1]])
+```
+
+Add the barrier
+---------------
+
+Then, we copy-and-modify that first state, adding it to the demography:
+`add_to_demography` applies the function specified by `fn=` to a population state
+(by default the most recent one), with the extra parameters given,
+and appends it to the demography `dem`, at time given by `tnew`:
+```{r add_barrier}
+dem <- add_to_demography( dem, tnew=barrier.time, fn=add_barrier, layer=1, rows=barrier.rows )
+plot(dem[[2]])
+```
+
+Remove the barrier
+------------------
+
+To remove the barrier, we'll just set the state back to what it was before (this is `pop[[1]]`, the first state):
+```{r remove_barrier}
+dem <- add_to_demography( dem, tnew=rejoin.time, pop=dem[[1]] )
+plot(dem[[3]])
+```
+
+
+Simulating with ms
+==================
+
+Trees, in R
+-----------
+
+To turn this into the command-line parameters for `ms`, we first turn it into an `msarg` object,
+which is just a named list,
+but nicer to parse with `R` than just a big long string.
+This also needs to know now many samples we will take, and where (as `ms` does).
+`ms` needs the sample configuration as a giant long vector, 
+but we keep track of it in a four-column matrix, (row, column, layer, number of samples).
+```{r sample_config}
+sample.config <- cbind(
+    row=c(5,5,25,25),
+    col=c(5,15,5,15),
+    layer=c(1,1,1,1),
+    n=c(2,2,2,2)
+    )
+sample.cols <- rainbow(nrow(sample.config))
+sample.config
+```
+With this in hand, we can run `ms`.
+We'll ask it to output trees, not sequence,
+and keep it all internal to `R` (by default it outputs to a new directory):
+```{r tree_msarg}
+ms.output <- suppressWarnings( run_ms( dem, nsamp=sample.config, trees=TRUE, tofile=FALSE, nreps=3 ) ) # never mind these warnings
+tree.output <- trees_from_ms( ms.output )
+layout(t(1:2))
+for (tree in tree.output) {
+    plot_sample_config( dem, sample.config )
+    abline(v=barrier.rows, lty=2, lwd=2, col='grey')
+    ape::plot.phylo( tree, tip.color=sample.cols[findInterval(as.numeric(tree$tip.label),1+c(0,cumsum(sample.config[,4])))] )
+    ape::axisPhylo(1)
+}
+```
+
+Sequence, to a file
+-------------------
+
+To get sequence, we could do as follows,
+this time outputting to a directory:
+```{r seq_msarg}
+ms.output <- run_ms( dem, nsamp=sample.config, theta=0.01 )
+cat(paste(scan(file.path(ms.output,"msoutput.txt"),what='char',sep='\n'),collapse='\n'))
+```
