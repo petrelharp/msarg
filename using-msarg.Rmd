@@ -1,0 +1,212 @@
+---
+title: "Using msarg to construct ms models of migration."
+author: Peter Ralph
+date: May 1, 2015
+---
+
+```{r setup, include=FALSE}
+require(ape)
+source("msarg.R")
+fig.dim <- 5
+knitr::opts_chunk$set(fig.height=2*fig.dim,fig.width=2*fig.dim,fig.align='center')
+```
+
+Here are some simpler, probably better, specific examples:
+
+1. Appearance, and disappearance, of [a barrier](barrier-howto.html)
+2. [Parallel universes](parallel-universes-howto.html)
+3. Sudden appearance, and gradual retreat, of [a glacier](glaciation-howto.html)
+
+
+Forwards and Reverse Time
+=========================
+
+The migration rates of `ms` are:
+"$m_{ij}$ the fraction of subpopulation $i$ which is made up of migrants from subpopulation $j$ each generation".
+But to translate to more natural units of migration,
+we need to scale these rates by population size;
+as the `ms` documentation notes:
+adding `-n 3 0.5` has the effect that:
+"the number of migrant copies arriving each generation
+from a particular population, or from all other subpopulations, to population 3
+is half as large as a consequence of this command. This is because the fraction
+of migrants is the same, but the total number of individuals is half what it
+would have been without the -n command."
+In other words, the `-m` of `ms` gives the probability of migration of a *lineage*, in reverse time,
+not an individual.
+
+To make this more intuitive,
+and along the way make it easier to specify range expansions,
+we're going to be specifying migration rates in *forwards time*.
+The migration rate $m_{ij}$ of `ms` is:
+$$ m_{ij} = \frac{ \text{(number of inmigrants to $i$ from $j$ per generation)} }{ \text{(size of population $i$)} } $$
+or equivalently
+$$ m_{ij} = \text{(probability an indiv from $j$ will migrate to $i$ per generation)} \times \frac{ \text{(size of population $j$)} }{ \text{(size of population $i$)} } $$
+We'll specify things in terms of *probability an indiv from $j$ will migrate to $i$ per generation*,
+which we call $\tilde m_{ji}$,
+and then when outputting to `ms` format, 
+compute $m_{ij} =  \tilde m_{ji} n_j/n_i$.
+
+After this, as populations get smaller (back in time),
+the lineages tend to move out of them;
+so rather than dissappearing populations (with `-ej` and the like)
+we can just make them very small, and lineages will instantly do the right thing.
+
+
+Population growth
+=================
+
+`ms` allows specification of population growth rates.
+These don't interact with migration in the way we'd want them to (see above);
+so we won't use this option.
+
+
+Grid Arrays
+===========
+
+The basic object is the population model for a given chunk of time.
+We'll just deal with sets of populations on a grid,
+so that will be a `gridArray` object.
+Let's make one, 
+with two layers,
+of a 30 x 20 grid,
+within-layer migration rates of 1 and between-layer rates of 0.1:
+```{r init_grid}
+ga <- grid_array(nlayers=2,nrow=30,ncol=20,N=1000,mig.rate=1,admix.rate=0.1)
+plot(ga)
+```
+In the plot, the diagonal shows arrows weighted by migration rates within a given layer,
+and offdiagonals show circles with size proportional to the "admixture" migration between the relevant layers.
+This looks pretty boring because all the migration rates are the same,
+and isn't showing between-layer migration rates at the moment.
+So we have something to look at, let's 
+increase migration rates on one layer,
+and then restrict each layer to a circle
+centered on the two corners:
+```{r zero_circles}
+ga <- modify_migration(ga,layer=1,doutM=rexp(ncol(ga)*nrow(ga)),dinM=rexp(nrow(ga)*ncol(ga)))
+plot(ga)
+ga <- restrict_patch(ga,layer=1,xy=c(1,1),r=10)
+ga <- restrict_patch(ga,layer=2,xy=c(nrow(ga),ncol(ga)),r=10)
+plot(ga)
+```
+Note that each population also has an associated "exponential growth" rate.
+
+We can also add barriers:
+```{r grid_barrier}
+ga <- grid_array(nlayers=2,nrow=30,ncol=20,N=1000,mig.rate=1,admix.rate=0.1)
+ga <- add_barrier(ga, layer=1, rows=c(5,15))
+ga <- add_barrier(ga, layer=2, cols=10)
+plot(ga)
+```
+
+Demographies
+============
+
+Now, here's an example of stringing these together into a model,
+with four model changes,
+and various `dt` between them:
+```{r init_dem}
+dem <- demography( grid_array(nlayers=2,nrow=30,ncol=20,N=1000,mig.rate=1,admix.rate=0.1) )
+dem[[1]] <- modify_migration(dem[[1]],layer=1,doutM=rexp(prod(dim(dem[[1]])[1:2])),dinM=rexp(prod(dim(dem[[1]])[1:2])))
+dem <- add_to_demography( dem, dt=2, add_barrier, layer=1, rows=10 )
+dem <- add_to_demography( dem, dt=1, restrict_patch, layer=1,xy=c(1,1),r=10 )
+dem[[3]] <- restrict_patch(dem[[3]],layer=2,xy=c(nrow(dem[[1]]),ncol(dem[[1]])),r=10)
+dem <- add_to_demography( dem, dt=2, identity )
+dem[[4]] <- dem[[1]]
+cat("t=",0,"\n")
+plot(dem[[1]])
+cat("t=",dem@t[1],"\n")
+plot(dem[[2]])
+cat("t=",dem@t[2],"\n")
+plot(dem[[3]])
+cat("t=",dem@t[3],"\n")
+plot(dem[[4]])
+```
+
+We also have a function to convert these to ms command line parameters.
+To check this, let's try a smaller model.
+```{r ms_args}
+dem <- demography( grid_array(nlayers=2,nrow=3,ncol=2,N=1000,mig.rate=1,admix.rate=0.1) )
+dem[[1]] <- modify_migration(dem[[1]],layer=1,doutM=rexp(ncol(dem[[1]])),dinM=rexp(nrow(dem[[1]])))
+dem <- add_to_demography( dem, dt=1, restrict_patch, layer=1,xy=c(1,1),r=1 )
+dem[[2]] <- restrict_patch(dem[[2]],layer=2,xy=c(nrow(dem[[1]]),ncol(dem[[1]])),r=1)
+print( msarg(dem,nsamp=cbind(row=1,col=1,layer=1,n=2)) )
+```
+
+*To-do:* make better specification of how many samples per which population.
+
+
+
+Check on the migration rates
+============================
+
+Let's run a quick check that migration works the way we think.
+Here are two scenarios: in each, there are 
+two populations connected by migration, the second of which is very small (so coalescence happens instantaneously);
+in the first scenario, the first population is of size 100,
+in the second, it is much bigger (10,000).
+We take five samples from the first, and two from the second.
+Migrants only go from the first population to the second.
+Since the second population is very small,
+and the first is large, coalescences happen only when a migration occurs, and then immediately.
+Ideally, we would plot both trees on the same scale,
+but, because `ape`,
+that seems to be impossible.
+```{r big_small_check}
+popsizes <- c(1e3,1e5)
+ms.trees <- lapply( popsizes, function (popsize) {
+        ga <- grid_array(
+                nlayers=2,     # two layers
+                nrow=1,ncol=1, # but only a 1x1 "grid" on each layer
+                mig.rate=1,    # migration within each layer; does nothing here
+                admix.rate=matrix(c(0,0,1,0),nrow=2),  # migration from layer 1 to layer 2, but not vice-versa
+                N=c(popsize,1e-4)       # first pop is 1000x the second
+            )
+        ms.output <- run_ms( ga,
+                nsamp=c(5,2),    # five sampled lineages from each population
+                trees=TRUE,      # output the tree (in newick)
+                tofile=FALSE,     # don't bother putting this in a file
+                scale.migration=FALSE  # don't scale migration rates by pop sizes, to investigate what ms does by itself
+            )
+        cat( paste( ms.output, collapse="\n" ), "\n" )  # here's the output
+        read.tree(text=ms.output[5])
+    } )
+layout(t(1:2))
+plot(ms.trees[[1]], tip.color=ifelse(as.numeric(ms.trees[[1]]$tip.label)>5,"red","black"), main=paste("pop size:",popsizes[1]) )
+add.scale.bar()
+plot(ms.trees[[2]], tip.color=ifelse(as.numeric(ms.trees[[2]]$tip.label)>5,"red","black"), main=paste("pop size:",popsizes[2]) )
+add.scale.bar()
+```
+The trees look about the same (on the same scale),
+certainly not different by a factor of 100,
+as you'd get if migration rates of lineages was affected by the difference in population size.
+
+Is the same true for the source population?
+Yep:
+```{r source_big_small_check}
+popsizes <- c(1e-2,1e-5)
+ms.trees <- lapply( popsizes, function (popsize) {
+        ga <- grid_array(
+                nlayers=2,     # two layers
+                nrow=1,ncol=1, # but only a 1x1 "grid" on each layer
+                mig.rate=1,    # migration within each layer; does nothing here
+                admix.rate=matrix(c(0,0,1,0),nrow=2),  # migration from layer 1 to layer 2, but not vice-versa
+                N=c(1e4,popsize)       # first pop is 1000x the second
+            )
+        ms.output <- run_ms( ga,
+                nsamp=c(5,2),    # five sampled lineages from each population
+                trees=TRUE,      # output the tree (in newick)
+                tofile=FALSE,     # don't bother putting this in a file
+                scale.migration=FALSE  # don't scale migration rates by pop sizes, to investigate what ms does by itself
+            )
+        cat( paste( ms.output, collapse="\n" ), "\n" )  # here's the output
+        read.tree(text=ms.output[5])
+    } )
+layout(t(1:2))
+plot(ms.trees[[1]], tip.color=ifelse(as.numeric(ms.trees[[1]]$tip.label)>5,"red","black"), main=paste("pop size:",popsizes[1]) )
+add.scale.bar()
+plot(ms.trees[[2]], tip.color=ifelse(as.numeric(ms.trees[[2]]$tip.label)>5,"red","black"), main=paste("pop size:",popsizes[2]) )
+add.scale.bar()
+```
+
