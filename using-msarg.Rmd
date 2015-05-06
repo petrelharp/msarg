@@ -11,6 +11,13 @@ fig.dim <- 5
 knitr::opts_chunk$set(fig.height=2*fig.dim,fig.width=2*fig.dim,fig.align='center')
 ```
 
+Here are some simpler, probably better, specific examples:
+
+1. Appearance, and disappearance, of [a barrier](barrier-howto.html)
+2. [Parallel universes](parallel-universes-howto.html)
+3. Sudden appearance, and gradual retreat, of [a glacier](glaciation-howto.html)
+
+
 Forwards and Reverse Time
 =========================
 
@@ -124,7 +131,7 @@ dem <- demography( grid_array(nlayers=2,nrow=3,ncol=2,N=1000,mig.rate=1,admix.ra
 dem[[1]] <- modify_migration(dem[[1]],layer=1,doutM=rexp(ncol(dem[[1]])),dinM=rexp(nrow(dem[[1]])))
 dem <- add_to_demography( dem, dt=1, restrict_patch, layer=1,xy=c(1,1),r=1 )
 dem[[2]] <- restrict_patch(dem[[2]],layer=2,xy=c(nrow(dem[[1]]),ncol(dem[[1]])),r=1)
-print( msarg(dem,n=1) )
+print( msarg(dem,nsamp=cbind(row=1,col=1,layer=1,n=2)) )
 ```
 
 *To-do:* make better specification of how many samples per which population.

@@ -1,0 +1,163 @@
+---
+title: "Simulating glaciation with ms"
+author: Peter Ralph
+date: May 5, 2015
+---
+
+
+```{r setup, include=FALSE}
+require(ape)
+source("msarg.R")
+fig.dim <- 5
+knitr::opts_chunk$set(fig.height=fig.dim,fig.width=2*fig.dim,fig.align='center')
+```
+
+**Scenario:** 
+A single lattice is hit by a "glacier" and contracts into 2 isolated subpopulations, 
+which after some time of isolation, subsequently expand out into the rest of the grid, and come into contact.
+
+A demographic model is a list of population models on the same grid, with a bit more information (time to switch for each).
+The way to build a demographic model is to:
+
+1. Start with a grid,
+2. then moving backwards in time, copy the last state, 
+3. then modify it.
+
+The function `add_to_demography` does this copy-and-modify step;
+and demographic models can be modified directly by subsetting.
+
+
+Building the demographic model
+==============================
+
+Initialization
+--------------
+
+First, let's choose the parameters for the grid:
+```{r params}
+nrow <- 100               # width of grid
+ncol <- 40                # height of grid
+glacier.width <- 70        # with of the glacier (in the middle)
+mig.rate <- 1             # migration rate between neighbors in the grid
+growth.time <- 200          # units of time (in Ne) it took to re-expand post-glacier
+glacier.end <- 500          # units of time ago (in Ne) that glaciation ended
+glacier.begin <- 1000        # units of time ago (in Ne) that glaciation began
+```
+Note that `Ne` is actually the number of individuals *per deme*, so the actual total effective population size is much larger, `r nrow*ncol`.
+
+Now, set up the grid,
+and use it to intialize a `demography` object.
+```{r init_grid}
+dem <- demography( grid_array(nlayers=1,nrow=nrow,ncol=ncol,N=1,mig.rate=mig.rate) )
+plot(dem[[1]])
+```
+
+Create the glacier
+------------------
+
+We'll first create the "glaciated" state,
+then use a helper function to interpolate between that and the full state.
+```{r glaciation}
+mask <- matrix(1,nrow=nrow(dem),ncol=ncol(dem))
+mask[ abs(row(mask)-nrow(dem)/2) < glacier.width/2] <- 0
+dem <- add_to_demography( dem, tnew=glacier.end, fn=modify_grid_layer, layer=1, dN=mask )
+plot(dem[[2]])
+```
+
+Postglacial expansion
+---------------------
+
+The function `logistic_interpolation` interpolates between two population states
+using local density-regulated population growth dynamics:
+if the population size in deme $(i,j)$, $t$ units of time ago, was $N_{i,j}(t)$,
+then one time step closer to the present it is
+$$ 
+N_{i,j}(t-dt) = N_{i,j}(t) 
+    + dt \times r N_{i,j}(t) ( N_{i,j}^* - N_{i,j}(t) ) 
+    + dt \times \frac{\sigma}{8} ( N_{i+1,j}(t) + N_{i-1,j}(t) + N_{i,j+1}(t) + N_{i,j-1}(t) - 4 N_{i,j}(t) )
+.  
+$$
+Here $\sigma$ is the migration rate, $r$ is the replacement rate, and $N_{i,j}^*$ is the carrying capacity;
+this generates a traveling wave that moves at speed $c = \sigma \sqrt{2r}$,
+and has width of order $\sigma / \sqrt{r}$.
+
+You specify the number of time steps you want `ms` to see of this process;
+the function `logistic_interpolation` does a finer-grained version of this to get a nice smooth spread.
+We could tell it $\sigma$ and $r$, but it is easier to get it to match a desired scenario
+by specifying the speed and width. 
+Note that at the end of the interpolation, the population goes instantly to its final state,
+so if you don't get the speed right it will either expand too quick or jump suddenly at the end.
+Also note that the wave takes some time to get going, so to make it arrive 
+you will likely have to make it move faster than a naive calculation would suggest
+to get it to arrive in time.
+```{r expansion}
+speed <- 1.2 * ( glacier.width ) / growth.time 
+width <- 10
+dem <- logistic_interpolation( dem, 
+    t.end=glacier.end-growth.time,   # time ago expansion ended
+    t.begin=glacier.end,             # time ago exapnsion began
+    nsteps=10,                        # number of time steps to pass to ms
+    speed=speed, width=width )       # parameters; could also pass sigma= and r= .
+```
+
+The arrival of the glacier
+--------------------------
+
+Now we just need to add the pre-glacier scenario,
+which is the same as the final state:
+```{r initial_state}
+dem <- add_to_demography( dem, tnew=glacier.begin, pop=1 )
+```
+
+What it looks like
+------------------
+
+Here's what the sequence looks like:
+(omitting arrows for clarity)
+```{r plot_model}
+plot(dem,do.arrows=FALSE)
+```
+
+
+Simulating with ms
+==================
+
+Trees, in R
+-----------
+
+Since we've only got one, unchanging, demographic scenario,
+we don't have to make a special `demography` object.
+We'll use a convenience function to pick some random sampling locations,
+two each from 30 random locations.
+```{r sample_config}
+sample.config <- sample_locations( dem, n=30, each=2 )
+sample.cols <- rainbow(nrow(sample.config))
+sample.config
+```
+With this in hand, we can run `ms`.
+We'll ask it to output trees, not sequence.
+For some reason, it gives an error if we keep it all in `R`: 
+maybe the string of parameters is too long?
+(Using `tofile=TRUE` puts the parameters in a file, passed to `ms` via `-f`.)
+```{r tree_msarg}
+ms.output <- run_ms( dem, nsamp=sample.config, trees=TRUE, nreps=3 )
+tree.output <- trees_from_ms( file.path(ms.output,"msoutput.txt") )
+layout(t(1:2))
+for (tree in tree.output) {
+    plot_sample_config( dem, sample.config )
+    abline(v=(nrow(dem)+c(1,-1)*glacier.width)/2, lty=2, lwd=2, col='grey')
+    ape::plot.phylo( tree, tip.color=sample.cols[findInterval(as.numeric(tree$tip.label),1+c(0,cumsum(sample.config[,4])))] )
+    ape::axisPhylo(1)
+    abline(v=get("last_plot.phylo",envir=.PlotPhyloEnv)$x.lim[2]-c(glacier.end,glacier.begin), lty=2, lwd=2, col='grey')  # grrr, ape::
+}
+```
+
+Sequence, to a file
+-------------------
+
+To get sequence, we could do as follows,
+this time outputting to a directory:
+```{r seq_msarg}
+ms.output <- run_ms( dem, nsamp=sample.config, theta=0.001 )
+cat(paste(scan(file.path(ms.output,"msoutput.txt"),what='char',sep='\n'),collapse='\n'))
+```

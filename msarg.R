@@ -19,6 +19,12 @@ setMethod("dim", signature=c(x="demography"), definition=function (x) { dim(x[[1
 setMethod("length", signature=c(x="demography"), definition=function (x) { length(x@t) } )
 setMethod("[[", signature=c(x="demography",i="ANY"), definition=function (x,i) { x@popStates[[i]] } )
 setMethod("[[<-", signature=c(x="demography",i="ANY",value="ANY"), definition=function (x,i,value) { x@popStates[[i]]<-value; return(x) } )
+setMethod("plot", signature=c(x="demography"), definition=function (x,...) {
+        for (k in seq_along(x@popStates)) {
+            readline(paste("Hit enter for t = ", c(0,x@t)[k]))
+            plot(x[[k]], ...)
+        }
+    } )
 
 add_to_demography <- function (dem,dt,fn=identity,pop,...,tnew=dt+if(length(dem@t)>0){dem@t[length(dem@t)]}else{0}) {
     # add to a demography by applying a modifier function fn 
@@ -29,6 +35,7 @@ add_to_demography <- function (dem,dt,fn=identity,pop,...,tnew=dt+if(length(dem@
     }
     nt <- length(dem@popStates)
     if (missing(pop)) { pop <- dem@popStates[[nt]] }
+    if (is.numeric(pop)) { pop <- dem@popStates[[pop]] }
     dem@popStates <- c( dem@popStates, fn(pop,...) )
     stopifnot( tnew >= max(c(0,dem@t)) )
     dem@t <- c(dem@t,tnew)
@@ -268,7 +275,7 @@ plot_admixture_layer <- function (ga,j,k,admix.fac=1,...) {
     return(invisible(admixmat))
 }
 
-plot_layer <- function (ga,layer,eps=0.05,lwd.fac=1,cex.fac=2/quantile(ga@N,.9),length=0.03,alpha=0.05,N.eps=1e-3,...) {
+plot_layer <- function (ga,layer,eps=0.05,lwd.fac=1,cex.fac=2/quantile(ga@N,.9),length=0.03,alpha=0.05,N.eps=1e-3,do.arrows=TRUE,...) {
     # draw a picture of a migration matrix
     layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
@@ -299,13 +306,17 @@ plot_layer <- function (ga,layer,eps=0.05,lwd.fac=1,cex.fac=2/quantile(ga@N,.9),
             cex=cex.fac*ga@N[layers],
             pch=20,xlim=c(0,nrow+1),ylim=c(0,ncol+1),
             asp=1,xaxt='n',yaxt='n',xlab='',ylab='')
-        arrows( x0=x0+upshift, x1=x1+upshift,
-            y0=y0+rightshift, y1=y1+rightshift,
-            col=sapply((this.lin.M/max(lineage.M@x,na.rm=TRUE))^alpha,function(a){adjustcolor("black",a)}),
-            lwd=lwd.fac*this.M@x, length=length, ... )
+        if (do.arrows) {
+            arrows( x0=x0+upshift, x1=x1+upshift,
+                y0=y0+rightshift, y1=y1+rightshift,
+                col=sapply((this.lin.M/max(lineage.M@x,na.rm=TRUE))^alpha,function(a){adjustcolor("black",a)}),
+                lwd=lwd.fac*this.M@x, length=length, ... )
+        }
     }
 }
 
+###
+# stuff for manipulating grids and demographies
 
 grid_array <- function (nlayers=1, nrow, ncol, N=1, mig.rate=0, admix.rate=0, G=0) {
     # make a gridArray object
@@ -406,6 +417,44 @@ restrict_patch <- function (ga, layer, xy, r) {
     zero.these <- layers[ gdists > r ]
     ga@N[zero.these] <- 0
     return(ga)
+}
+
+logistic_interpolation <- function (dem, t.end, t.begin, nsteps, speed, width, sigma=sqrt(speed*width/sqrt(2)), r=speed/(width*sqrt(2)), dt.per.step=100) {
+    # Do logistic growth to interpolate between population states.
+    #  does dt.per.step 'invisible' steps -- it seems essential this is fairly large.
+    stopifnot( ( t.end < t.begin ) && ( t.begin <= max(dem@t) ) )
+    #   This only works if both t.end and t.begin are in the same interval,
+    #     with population states specified on either end.
+    ga.interval <- findInterval( (t.end+t.begin)/2, c(0,dem@t) )
+    stopifnot( ( c(0,dem@t)[ga.interval] <= t.end ) && ( t.begin <= c(0,dem@t)[ga.interval+1] ) ) 
+    # we will add new population states at these times:
+    add.t <- seq(t.begin,t.end,length.out=nsteps+1)
+    new.t <- sort(unique(c(dem@t,add.t)))
+    # full list of demographies will go here
+    new.dem <- vector(length(new.t),mode="list")
+    # populate with existing states
+    new.dem[ match(c(0,dem@t),c(0,new.t)) ] <- dem@popStates
+    # ending state, determines carrying capacities
+    end.N <- dem[[ga.interval]]@N
+    # beginning state
+    begin.k <- match(t.begin,c(0,new.t))
+    new.dem[[ begin.k ]] <- next.ga <- dem[[ga.interval+1]]
+    # time step length
+    dt <- (t.begin-t.end)/(nsteps*dt.per.step)
+    # Laplacian operator -- should really use *migration matrix* for this
+    adj <- (1/4) * grid.adjacency(nrow(dem),ncol(dem),diag=FALSE)
+    for (k in 1:nsteps) {
+        for (j in 1:dt.per.step) {
+            next.ga@N <- as.vector( next.ga@N + dt * ( r * next.ga@N * ( end.N - next.ga@N ) 
+                    + (sigma^2/2) * (adj%*%next.ga@N - rowSums(adj)*next.ga@N) ) )
+        }
+        new.dem[[ begin.k - k ]] <- next.ga
+    }
+    return( 
+        new( "demography",
+            popStates=new.dem,
+            t=new.t
+        ) )
 }
 
 ##

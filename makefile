@@ -1,4 +1,6 @@
-all : using-msarg.html
+htmls = $(patsubst %.Rmd,%.html,$(wildcard *.Rmd))
+
+all : $(htmls)
 
 %.html : %.md
 	pandoc $< > $@
