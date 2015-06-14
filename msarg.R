@@ -94,7 +94,15 @@ setMethod("msarg", signature=c(x="demography"), definition=function (x,nsamp,sca
             nsamp <- nsample_vector(x[[1]],nsamp)
         }
         stopifnot( length(nsamp) ==  prod(dim(x[[1]])) )
-        arglist <- c( list(
+        if (prod(dim(x[[1]]))==1) {
+            # ms won't allow -I with only one pop
+            stop("Sorry, can't do single populations at the moment.")
+        }
+        more.args <- list(...)
+        if (length(more.args)>0) { names(more.args) <- paste("-",names(more.args),sep='') }
+        arglist <- c( 
+                    more.args,  # can pass in other things, like -p n or -seeds x1 x2 x3
+                    list(
                         "-I"=c( prod(dim(x[[1]])), nsamp )
                         ),
                     msarg_N(x[[1]]),  # note that N must come before G, as N sets G to zero.
@@ -177,6 +185,7 @@ lineage_M <- function (ga,eps=min(ga@N[ga@N>0])/1000) {
 setGeneric("run_ms", function(x,...) { standardGeneric("run_ms") })
 setMethod("run_ms", signature=c(x="popArray"), definition=function (x,...) { run_ms(demography(x),...) } )
 setMethod("run_ms", signature=c(x="demography"), definition=function (x,nsamp,outdir,theta,trees=FALSE,nreps=1,tofile=TRUE,...) {
+        if (missing(theta) & !trees) { stop("Must specify either theta or trees=TRUE.") }
         if (NCOL(nsamp)==4) {
             # assume this is in sample.config format
             nsamp <- nsample_vector(x[[1]],nsamp)
@@ -204,6 +213,9 @@ setMethod("run_ms", signature=c(x="demography"), definition=function (x,nsamp,ou
         return( if (tofile) { invisible(outdir) } else { ms.results } )
     } )
 
+##
+# processing tree output
+
 trees_from_ms <- function (ms.output) {
     # extract the trees from ms.output
     if ( (length(ms.output)==1) && (file.exists(ms.output)) ) {
@@ -211,6 +223,26 @@ trees_from_ms <- function (ms.output) {
     }
     almost <- which( grepl("^//",ms.output) )
     lapply( ms.output[almost+1], function (x) { ape::read.tree(text=x) } )
+}
+
+tree_dists <- function (trees,sample.config) {
+    # get matrix of tree distances
+    #  **in the right order**
+    # first put in the same order as processed by ms:
+    sample.config.ord <- order(sample.config[,3],sample.config[,2],sample.config[,1])
+    #  after reordering, sample.config[k,] is the k-th *group* of output*s* from ms
+    sample.config <- sample.config[sample.config.ord,,drop=FALSE]
+    tip_order <- function (tree) {
+        # tip.ord[k] says which *reordered* group the k-th tip is in
+        tip.ord <- findInterval(as.numeric(tree$tip.label),1+c(0,cumsum(sample.config[,4])))
+        # so the k-th tip is in the sample.config.ord[tip.ord[k]]-th original group
+        # rank(sample.config.ord[tip.ord],ties.method="first")  # this MISTAKE ends up putting nearby leaves close to each other, strangely
+        order(sample.config.ord[tip.ord],as.numeric(tree$tip.label))
+    }
+    lapply( trees, function (tree) {
+            ord <- tip_order(tree)
+            ape::cophenetic.phylo(tree)[ord,ord]
+        } )
 }
 
 
@@ -465,9 +497,15 @@ logistic_interpolation <- function (dem, t.end, t.begin, nsteps, speed, width, s
 #   2    4      1   12
 #   ....
 
+## TO-DO: add a class for sample config
+
+sort_sample_config <- function (sample.config) {
+    sample.config[order(sample.config[,3],sample.config[,2],sample.config[,1]),,drop=FALSE]
+}
+
 plot_sample_config <- function ( dem, sample.config, sample.cols=rainbow(nrow(sample.config)), add=FALSE, ... ) {
     # first put in the same order as processed by ms:
-    sample.config <- sample.config[do.call(order,list(sample.config[,1],sample.config[,2],sample.config[,3])),]
+    sample.config <- sort_sample_config(sample.config)
     if (!add) { 
         plot( sample.config[,1:2], type='n', xlim=c(0,nrow(dem)+1), ylim=c(0,ncol(dem)+1), xlab='', ylab='', xaxt='n', yaxt='n', asp=1, bty='n' ) 
         rect( xleft=1, ybottom=1, xright=nrow(dem), ytop=ncol(dem) )
@@ -485,6 +523,12 @@ nsample_vector <- function (ga, samps, dims=dim(ga)) {
     if (nrow(samps) != nrow(unique(samps))) {
         stop("Sampling locations are not unique.")
     }
+    if ( any( samps[,1] > dims[1] ) | any( samps[,2] > dims[2] ) | any( samps[,3] > dims[3] ) ) {
+        stop("Sampling locations are out of bounds.")
+    }
+    if (any(diff(order(samps[,3],samps[,2],samps[,1]))<0)) {
+        warning("sample configuration not in sorted order: output from ms will not be in the same order as the configuration.")
+    }
     sample.config <- array(0,dim=dims)
     sample.config[ as.matrix(samps)[,1:3] ] <- samps[,4]
     return( as.vector(sample.config) )
@@ -496,6 +540,27 @@ sample_locations <- function (ga, n, each=1, dims=dim(ga)) {
     x <- arrayInd( which(n>0), .dim=dims )
     colnames(x) <- c("row","col","layer")
     return( cbind(x,n=n[n>0]) )
+}
+
+sample_real_locs <- function (real.locs, ga, each=1, dims=dim(ga)) {
+    # Translate "real" locations to their nearest grid point
+    locs <- cbind( i=1+floor(dim(ga)[1]*real.locs[,1]), j=1+floor(dim(ga)[2]*real.locs[,2]) )
+    n <- each * tabulate( (locs[,"i"]-1)*dim(ga)[1]+locs[,"j"], nbins=prod(dims) )
+    x <- arrayInd( which(n>0), .dim=dims )
+    colnames(x) <- c("row","col","layer")
+    sample.config <- cbind(x,n=n[n>0]) 
+    # output in the order returned by ms
+    sample.config <- sort_sample_config(sample.config)
+    return(sample.config)
+}
+
+distance_from_sample <- function (sample.config,rowscale=1,colscale=1) {
+    # return a matrix of distances between all samples
+    x <- sample.config[,1]*rowscale
+    y <- sample.config[,2]*colscale
+    loc.dists <- sqrt( outer( x, x, "-" )^2 + outer( y, y, "-" )^2 )
+    loc.index <- rep(1:nrow(sample.config),sample.config[,4])
+    return(loc.dists[loc.index,loc.index])
 }
 
 ##
@@ -528,5 +593,3 @@ grid.adjacency <- function (nrow,ncol=nrow,diag=TRUE,symmetric=TRUE) {
     A <- with( subset(adj, usethese ), sparseMatrix( i=i+1L, j=j+1L, x=1.0, dims=c(nrow*ncol,nrow*ncol), symmetric=symmetric ) )
     return(A)
 }
-
-

@@ -1,0 +1,103 @@
+---
+title: "Tests"
+author: Peter Ralph
+date: "`r date()`"
+---
+
+
+```{r setup, include=FALSE}
+source("../msarg.R")
+fig.dim <- 5
+knitr::opts_chunk$set(fig.height=fig.dim,fig.width=2*fig.dim,fig.align='center')
+```
+
+A "$1 \times 1$ grid"
+--------------
+
+Let's make a *single population*,
+sample 10 individuals,
+and simulate 1000 trees.
+Whoops, `ms` won't let me use the `-I` syntax with only one population, so I'll fudge it for the moment.
+```{r oneby, fig.width=fig.dim}
+ga <- grid_array(nlayers=1,nrow=1,ncol=1+1,N=1,mig.rate=0.0)
+sample.config <- sort_sample_config( cbind(
+        row=1,
+        col=1,
+        layer=1,
+        n=10
+    ) )
+dem <- demography( ga )
+msout <- run_ms( dem, tofile=FALSE, outdir=outdir, nsamp=sample.config, trees=TRUE, nreps=1000 )
+trees <- trees_from_ms(msout)
+dists <- tree_dists( trees, sample.config )
+dist.mat <- do.call( cbind, lapply( dists, as.vector ) )
+mean.tree.dists <- rowMeans(dist.mat)
+dim(mean.tree.dists) <- c(sum(sample.config[,"n"]),sum(sample.config[,"n"]))
+image(mean.tree.dists,xaxt='n',yaxt='n',main="average tree distance")
+```
+
+There should be no structure in the plot.
+
+
+An "island model"
+-----------------
+
+Now let's sample 10 individuals
+from 10 islands, that all exchange migrants,
+and simulate 1000 trees.
+```{r island, fig.width=fig.dim}
+nislands <- 10
+ga <- grid_array(nlayers=1,nrow=1,ncol=nislands,N=1,mig.rate=0.0)
+ga@M[row(ga@M)!=col(ga@M)] <- 1.0  # does bad things if diagonal is not zero??
+sample.config <- sort_sample_config( cbind(
+        row=1,
+        col=1:nislands,
+        layer=1,
+        n=1
+    ) )
+dem <- demography( ga )
+msout <- run_ms( dem, tofile=FALSE, outdir=outdir, nsamp=sample.config, trees=TRUE, nreps=1000 )
+trees <- trees_from_ms(msout)
+dists <- tree_dists( trees, sample.config )
+dist.mat <- do.call( cbind, lapply( dists, as.vector ) )
+mean.tree.dists <- rowMeans(dist.mat)
+dim(mean.tree.dists) <- c(sum(sample.config[,"n"]),sum(sample.config[,"n"]))
+image(mean.tree.dists,xaxt='n',yaxt='n',main="average tree distance")
+```
+
+There should again be no structure in the plot.
+
+A $10 \times 10$ grid
+--------------
+
+Let's make a $10 \times 10$ grid,
+sample from near the corners,
+and sample 1000 trees.
+```{r helper, include=FALSE}
+nrow <- ncol <- 10
+m <- 0.1
+ga <- grid_array(nlayers=1,nrow=nrow,ncol=ncol,N=1,mig.rate=m)
+sample.config <- sort_sample_config( cbind(
+        row=c(1,2,1,2,9,10),
+        col=c(1,2,10,9,9,10),
+        layer=1,
+        n=rep(2,6)
+    ) )
+dem <- demography( ga )
+msout <- run_ms( dem, tofile=FALSE, outdir=outdir, nsamp=sample.config, trees=TRUE, nreps=1000 )
+trees <- trees_from_ms(msout)
+dists <- tree_dists( trees, sample.config )
+dist.mat <- do.call( cbind, lapply( dists, as.vector ) )
+mean.tree.dists <- rowMeans(dist.mat)
+dim(mean.tree.dists) <- c(sum(sample.config[,"n"]),sum(sample.config[,"n"]))
+layout(t(1:2))
+plot_sample_config( dem, sample.config )
+image(mean.tree.dists,main="mean tree distance")
+```
+
+Distances in the sample configuration should look like the tree distances; check this:
+```{r check_dists, fig.width=fig.dim}
+gdist <- distance_from_sample( sample.config )
+plot( as.vector(gdist), as.vector(mean.tree.dists), xlab="geog dist", ylab="tree dist" )
+```
+
