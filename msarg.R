@@ -260,6 +260,7 @@ setGeneric("nlayers", function(x,...) { standardGeneric("nlayers") })
 setMethod("nlayers", signature=c(x="gridArray"), definition=function (x) { dim(x)[3] } )
 setGeneric("layer_inds", function(x,...) { standardGeneric("layer_inds") })
 setMethod("layer_inds", signature=c(x="gridArray"), definition=function (x,layer) {
+        # tells you which indices in e.g. x@N correspond to layer number 'layer'
         nrow <- x@npop[1]
         ncol <- x@npop[2]
         return( (layer-1) * nrow * ncol + (1:(nrow*ncol)) )
@@ -307,7 +308,17 @@ plot_admixture_layer <- function (ga,j,k,admix.fac=1,...) {
     return(invisible(admixmat))
 }
 
-plot_layer <- function (ga,layer,eps=0.05,lwd.fac=1,cex.fac=2/quantile(ga@N,.9),length=0.03,alpha=0.05,N.eps=1e-3,do.arrows=TRUE,...) {
+plot_layer <- function ( 
+                    ga,
+                    layer,
+                    eps=0.05,
+                    lwd.fac=0.5,
+                    cex.fac=2/quantile(ga@N,.9),
+                    length=0.03,
+                    alpha=0.5,
+                    N.eps=1e-3,
+                    do.arrows=TRUE,
+                    ...) {
     # draw a picture of a migration matrix
     layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
