@@ -261,6 +261,7 @@ setGeneric("nlayers", function(x,...) { standardGeneric("nlayers") })
 setMethod("nlayers", signature=c(x="gridArray"), definition=function (x) { dim(x)[3] } )
 setGeneric("layer_inds", function(x,...) { standardGeneric("layer_inds") })
 setMethod("layer_inds", signature=c(x="gridArray"), definition=function (x,layer) {
+        # tells you which indices in e.g. x@N correspond to layer number 'layer'
         nrow <- x@npop[1]
         ncol <- x@npop[2]
         return( (layer-1) * nrow * ncol + (1:(nrow*ncol)) )
