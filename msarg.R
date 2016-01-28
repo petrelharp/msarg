@@ -1,5 +1,6 @@
 
 require(Matrix)
+if (!require(Biostrings)) { warning("Need Biostrings to simulate sequence.") }
 
 ##
 # A demographic model consists of:
@@ -270,6 +271,7 @@ setMethod("plot", signature=c(x="gridArray"), definition=function(x,layers=seq_l
         if (do.layout) {
             layout(matrix(1:(nlayers^2),nrow=nlayers))
             opar <- par(oma=c(0.5,0.5,0.5,0.5),mar=c(0.1,0.1,0.1,0.1))
+            on.exit( par(opar), add=TRUE )
         }
         for (k in layers) {
             for (j in layers) {
@@ -280,7 +282,6 @@ setMethod("plot", signature=c(x="gridArray"), definition=function(x,layers=seq_l
                 }
             }
         }
-        if (do.layout) { par(opar) }
     } )
 
 # methods to get row and column indices of nonzero entries of a (sparse) dgCMatrix
@@ -307,43 +308,65 @@ plot_admixture_layer <- function (ga,j,k,admix.fac=1,...) {
     return(invisible(admixmat))
 }
 
-plot_layer <- function (ga,layer,eps=0.05,lwd.fac=1,cex.fac=2/quantile(ga@N,.9),length=0.03,alpha=0.05,N.eps=1e-3,do.arrows=TRUE,...) {
+plot_layer <- function (ga,
+                        layer,
+                        eps=0.05,
+                        lwd.fac=1,
+                        cex.fac=2/quantile(ga@N[ga@N>0],.9),
+                        length=0.03,
+                        alpha=0.05,
+                        N.eps=1e-3,
+                        do.arrows=TRUE,
+                        ...) {
+    if (all(ga@N==0)) { stop("All population sizes are zero.") }
     # draw a picture of a migration matrix
     layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
-    lineage.M <- lineage_M(ga)
-    # for plotting purposes, remove lineage migration rates between 'zeroed' populations.
-    if (any(ga@N<=N.eps)) {
-        lineage.M[ga@N<=N.eps,] <- 0.0
-        lineage.M[,ga@N<=N.eps] <- 0.0  
-    }
     if (nrow==1 && ncol==1) {
         plot( 0, type='n', xlab='', ylab='', xaxt='n', yaxt='n' )
     } else {
         rowdummy <- row( Matrix(0,nrow=nrow,ncol=ncol) )
         coldummy <- col( Matrix(0,nrow=nrow,ncol=ncol) )
-        this.M <- ga@M[layers,layers]
-        rind <- rowinds(this.M)
-        cind <- colinds(this.M)
-        this.lin.M <- lineage.M[layers,layers][cbind(rind,cind)]
-        x0 <- rowdummy[rind]
-        x1 <- rowdummy[cind]
-        y0 <- coldummy[rind]
-        y1 <- coldummy[cind]
-        upshift <- eps*(y1-y0)
-        rightshift <- eps*(x1-x0)
-        plot(
-            as.vector(rowdummy),as.vector(coldummy),
+        plot( as.vector(rowdummy), as.vector(coldummy),
+            type='n',
             cex=cex.fac*ga@N[layers],
-            pch=20,xlim=c(0,nrow+1),ylim=c(0,ncol+1),
-            asp=1,xaxt='n',yaxt='n',xlab='',ylab='')
+            pch=20, xlim=c(0,nrow+1), ylim=c(0,ncol+1),
+            asp=1, xaxt='n', yaxt='n', xlab='', ylab='')
         if (do.arrows) {
+            lineage.M <- lineage_M(ga)
+            this.M <- ga@M[layers,layers]
+            # for plotting purposes, 
+            # remove lineage migration rates between 'zeroed' populations.
+            remove.links <- ( is.na(ga@N) | ( ga@N<=N.eps ) )
+            lineage.M[remove.links,] <- 0.0
+            lineage.M[,remove.links] <- 0.0
+            this.M[remove.links,] <- 0.0
+            this.M[,remove.links] <- 0.0
+            # indices corresponding to rows and columns of this.M@x
+            rind <- rowinds(this.M)
+            cind <- colinds(this.M)
+            use.these <- ( (rind != cind) & (this.M@x > 0) )
+            rind <- rind[use.these]
+            cind <- cind[use.these]
+            this.lin.M <- lineage.M[layers,layers][cbind(rind,cind)]
+            this.M.vals <- this.M[layers,layers][cbind(rind,cind)]
+            x0 <- rowdummy[rind]
+            x1 <- rowdummy[cind]
+            y0 <- coldummy[rind]
+            y1 <- coldummy[cind]
+            upshift <- eps*(y1-y0)
+            rightshift <- eps*(x1-x0)
+            migr.col <- rev(heat.colors(100)[1:64])
             arrows( x0=x0+upshift, x1=x1+upshift,
-                y0=y0+rightshift, y1=y1+rightshift,
-                col=sapply((this.lin.M/max(lineage.M@x,na.rm=TRUE))^alpha,function(a){adjustcolor("black",a)}),
-                lwd=lwd.fac*this.M@x, length=length, ... )
+                    y0=y0+rightshift, y1=y1+rightshift,
+                    # col=sapply((this.lin.M/max(lineage.M@x,na.rm=TRUE))^alpha,function(a){adjustcolor("black",a)}),
+                    # lwd=lwd.fac*this.lin.M, length=length, ... )
+                    col=migr.col[cut((this.lin.M/max(lineage.M@x,na.rm=TRUE)),length(migr.col))],
+                    length=length, ... )
         }
+        points( as.vector(rowdummy), as.vector(coldummy),
+            cex=cex.fac*ga@N[layers], pch=20 )
     }
 }
 
@@ -592,4 +615,197 @@ grid.adjacency <- function (nrow,ncol=nrow,diag=TRUE,symmetric=TRUE) {
     # add 1 since we worked 0-based above; sparseMatrix (unlike underlying representation) is 1-based.
     A <- with( subset(adj, usethese ), sparseMatrix( i=i+1L, j=j+1L, x=1.0, dims=c(nrow*ncol,nrow*ncol), symmetric=symmetric ) )
     return(A)
+}
+
+###
+# stuff to read in and do things with ms output
+
+setGeneric("nsamples", function(x,...) { standardGeneric("nsamples") })
+setGeneric("msseq", function(x,nloci,...) { standardGeneric("msseq") })
+setGeneric("pimat", function(x,nloci,...) { standardGeneric("pimat") })
+
+# this is the output of one ms run
+setClass("msrun", representation(
+        nsamples="numeric",       # number of sampled sequences
+        call="character",       # call to ms
+        runs="list"             # list of msout objects
+    ) )
+setMethod("length", signature=c(x="msrun"), definition=function (x) { length(x@runs) } )
+setMethod("[[", signature=c(x="msrun",i="ANY"), definition=function (x,i) { x@runs[[i]] } )
+setMethod("[[<-", signature=c(x="msrun",i="ANY",value="ANY"), definition=function (x,i,value) { x@runs[[i]]<-value; return(x) } )
+setMethod("nsamples", signature=c(x="msrun"), definition=function (x) { x@nsamples } )
+setMethod("msseq", signature=c(x="msrun",nloci="numeric"), definition=function (x,nloci) { x@runs <- lapply(x@runs,msseq,nloci=nloci); return(x) } )
+setMethod("pimat", signature=c(x="msrun"), definition=function (x) { 
+        pimat.seq( do.call( xscat, lapply( x@runs, slot, "sequence" ) ) )
+    } )
+
+# this is the output of one ms replicate
+setClass("msrep", representation(
+        segsites="numeric",     # number of segregating sites
+        positions="numeric",    # locations (floats) of the sites
+        alleles="matrix"        # binary matrix of alleles
+    ) )
+setMethod("nsamples", signature=c(x="msrep"), definition=function (x) { nrow(x@alleles) } )
+setMethod("msseq", signature=c(x="msrep",nloci="numeric"), definition=function (x,nloci) { make_msseq(x,nloci) } )
+setMethod("names", signature=c(x="msrep"), definition=function (x) { rownames(x@alleles) } )
+setMethod("pimat", signature=c(x="msrep"), definition=function (x) { pimat.seq(x@sequence) } )
+
+# and, this is what we get after converting to sequence
+setClass("msseq", contains="msrep",
+    representation(
+        sequence="DNAStringSet"     # from Bioconductor::Biostrings
+    ) )
+setMethod("show",signature=c(object="msseq"), definition=function (object) { show(object@sequence) })
+
+to_fasta <- function (msrun,file,...) {
+    # 'file' should be a path with a "%" in where the index of the replicate is inserted
+    fnames <- sapply( seq_along(msrun@runs), function (k) { gsub("%",k,file) } )
+    for (k in seq_along(msrun@runs)) {
+        msseq_to_fasta(msrun@runs[[k]],file=fnames[k],...)
+    }
+    return(fnames)
+}
+
+msseq_to_fasta <- function (msseq,file,append=FALSE) {
+    dir.create(dirname(file),recursive=TRUE,showWarnings=FALSE)
+    Biostrings::writeXStringSet(msseq@sequence,file=file,append=append)
+}
+
+split_fasta <- function (fasta,output=file.path(gsub("[.]fa$","",fasta),"%.fa")) {
+    for (fk in seq_along(fasta)) {
+        dir.create(dirname(output[fk]),recursive=TRUE,showWarnings=FALSE)
+        fseqs <- Biostrings::readDNAStringSet(fasta[fk])
+        if (is.null(names(fseqs))) { names(fseqs) <- seq_along(fseqs) }
+        for (k in seq_along(fseqs)) {
+            outfile <- gsub("%",names(fseqs)[k],output[fk])
+            Biostrings::writeXStringSet(fseqs[k],file=outfile)
+        }
+    }
+    return(dirname(output))
+}
+
+sample_reads <- function (
+        infiles,
+        coverage,
+        error.prob,
+        outdirs=gsub("[.]fa$","",infiles),
+        count.files=outdirs
+    ) {
+    # first split up the fasta files into separate ones per individual (sequencer silently uses only the first line)
+    # then, in that directory:
+    #  use 'sequencer' to sample short reads from input fasta files, writing them out to the files in outfiles;
+    #  then map them back to the consensus sequence with 'bwa'
+    #  and sort, index, etc with 'samtools'
+    #  and count up alleles with 'angsd'
+    sequencer.call <- paste("sequencer", "-c", coverage, "-E", error.prob )
+    bwa.index.call.head <- paste("bwa index" )
+    bwa.call.head <- paste("bwa mem" )
+    bwa.call.tail <- paste("|", "samtools view -b - | samtools sort -O bam -T $(mktemp -u tmp.XXXXXX) >")
+    samtools.call <- paste("samtools index")
+    angsd.call.head <- paste('bash -c "angsd -bam <(echo ')
+    angsd.call.mid <- paste(') -out')
+    angsd.call.tail <- paste('-minQ 0 -doCounts 1 -dumpCounts 4"')
+    # split into indviduals
+    for (j in seq_along(infiles)) {
+        split_fasta(infiles[j],file.path(outdirs[j],"%.fa"))
+        fasta.files <- list.files(outdirs[j],pattern="*[.]fa$",full.names=TRUE)
+        reference.file <- fasta.files[1]
+        read.files <- gsub("[.]fa$",".reads.fa",fasta.files)
+        bam.files <- gsub("[.]fa$",".bam",fasta.files)
+        browser()
+        for (k in seq_along(fasta.files)) {
+            scall <- paste(sequencer.call, infiles[k], ">", read.files[k])
+            bicall <- paste(bwa.index.call.head, reference.file)
+            bcall <- paste(bwa.call.head, reference.file, read.files[k], bwa.call.tail, bam.files[k])
+            samcall <- paste(samtools.call, bam.files[k])
+            for (call in c(scall,bicall,bcall,samcall)) {
+                cat(call,"\n")
+                system(call,ignore.stderr=TRUE)
+            }
+        }
+        acall <- paste( angsd.call.head, paste(bam.files,collapse=" "), angsd.call.mid, count.files[j], angsd.call.tail )
+    }
+    return(count.files)
+}
+
+read_msrun <- function (ms.output,
+        text=paste(scan(file.path(ms.output,"msoutput.txt"),what='char',sep='\n'),collapse='\n')
+    ) {
+    msout <- strsplit(text,"\n//\n",fixed=TRUE)[[1]]
+    call <- msout[[1]]
+    runs <- lapply(msout[-1],read_msrep)
+    nsamples <- sapply(runs,nsamples)
+    if (length(unique(nsamples))>1) { warning("Not all replicates have the same number of samples?!?") }
+    return( new("msrun",
+            nsamples=nsamples[1],
+            call=call,
+            runs=runs
+        ) )
+}
+
+read_msrep <- function (text) {
+    text <- strsplit(text,"\n")[[1]]
+    if (!substring(text[1],1,10)=="segsites: ") {
+        stop("Expecting 'segsites: ', got", text[1])
+    } else {
+        segsites <- as.integer(substring(text[1],11))
+    }
+    if (!substring(text[2],1,11)=="positions: ") {
+        stop("Expecting 'positions: ', got", text[2])
+    } else {
+        positions <- sapply(strsplit(substring(text[2],12)," ")[[1]],as.numeric)
+    }
+    alleles <- do.call( rbind, strsplit( text[-(1:2)], "" ) )
+    if (!all(alleles %in% c("0","1"))) { stop("Found alleles that aren't 0 or 1??") }
+    alleles <- ( alleles == "1" )
+    # give samples names!
+    rownames(alleles) <- paste("s",1:nrow(alleles),sep='')
+    return( new( "msrep", segsites=segsites, positions=positions, alleles=alleles ) )
+}
+
+make_msseq <- function (msrep,nloci) {
+    # Turn a msout object into a msseq object, by picking alleles and adding errors.
+    # Moves two mutations occurring in the same bin to the next unmutated bin.
+    bases <- c("A","C","G","T")
+    refseq <- DNAString( paste(sample(bases,nloci,replace=TRUE),collapse='') )
+    loci <- 1+floor( msrep@positions*(nloci-1) )
+    if (length(loci)>nloci) { stop("Too many loci!") }
+    nn <- 0
+    while( nn<100 && any(diff(loci)==0) ) {
+        loci[ c(FALSE,diff(loci)==0) ] <- 1+loci[ c(FALSE,diff(loci)==0) ]
+    }
+    if (nn==100) { stop("Too many mutated sites!") }
+    use.loci <- (loci <= nloci)
+    if (!all(use.loci)) {
+        warning("Some loci fell off the end of the sequence, omitting", sum(!use.loci), "of them.") 
+        loci <- loci[use.loci]
+    }
+    altseq <- DNAString( paste( bases[ 1+((match(strsplit(as.character(refseq[loci]),"")[[1]],bases)+sample.int(3,length(loci),replace=TRUE))%%4) ], collapse="") )
+    sequence <- DNAStringSet( list(refseq)[rep(1,nsamples(msrep))] )
+    names(sequence) <- names(msrep)
+    for (ind in seq_len(nsamples(msrep))) {
+        # substitute in alternative alleles
+        repthese <- msrep@alleles[ind,use.loci]
+        sequence[[ind]][loci[repthese]] <- altseq[repthese]
+    }
+    return( new( "msseq",
+            segsites=msrep@segsites,
+            positions=msrep@positions,
+            alleles=msrep@alleles,
+            sequence=sequence
+        ) )
+}
+
+add_error_seq <- function (seq,error.prob) {
+    # add independent errors to a sequence
+    errors <- ( rbinom( nloci, size=1, prob=error.prob ) > 0 )
+    nerrors <- sum(errors)
+    errseq <- DNAString( paste( bases[ 1+((match(strsplit(as.character(seq[errors]),"")[[1]],bases)+sample.int(3,nerrors,replace=TRUE))%%4) ], collapse="") )
+    seq[errors] <- errseq
+    return(seq)
+}
+
+pimat.seq <- function (sequence) {
+    # compute the matrix of mean pairwise distances
+    Biostrings::stringDist(sequence,method="hamming")/nchar(sequence[[1]])
 }
