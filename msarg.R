@@ -318,6 +318,7 @@ plot_layer <- function (ga,
                         alpha=0.05,
                         N.eps=1e-3,
                         do.arrows=TRUE,
+                        arrow.direction=c("forwards","reverse"),
                         ...) {
     if (all(ga@N==0)) { stop("All population sizes are zero.") }
     # draw a picture of a migration matrix
@@ -350,21 +351,25 @@ plot_layer <- function (ga,
             use.these <- ( (rind != cind) & (this.M@x > 0) )
             rind <- rind[use.these]
             cind <- cind[use.these]
-            this.lin.M <- lineage.M[layers,layers][cbind(rind,cind)]
-            this.M.vals <- this.M[layers,layers][cbind(rind,cind)]
+            nmags <- 64
+            arrow.magnitudes <- cut( switch(match.arg(arrow.direction),
+                        "forwards" = this.M[layers,layers][cbind(rind,cind)],
+                        "reverse" = lineage.M[layers,layers][cbind(rind,cind)]
+                    ), nmags )
+            # this.lin.M <- lineage.M[layers,layers][cbind(rind,cind)]
+            # this.M.vals <- this.M[layers,layers][cbind(rind,cind)]
             x0 <- rowdummy[rind]
             x1 <- rowdummy[cind]
             y0 <- coldummy[rind]
             y1 <- coldummy[cind]
             upshift <- eps*(y1-y0)
             rightshift <- eps*(x1-x0)
-            migr.col <- rev(heat.colors(100)[1:64])
+            migr.col <- rev(heat.colors(1.5*nmags)[1:nmags])
             arrows( x0=x0+upshift, x1=x1+upshift,
                     y0=y0+rightshift, y1=y1+rightshift,
                     # col=sapply((this.lin.M/max(lineage.M@x,na.rm=TRUE))^alpha,function(a){adjustcolor("black",a)}),
                     # lwd=lwd.fac*this.lin.M, length=length, ... )
-                    col=migr.col[cut((this.lin.M/max(lineage.M@x,na.rm=TRUE)),length(migr.col))],
-                    length=length, ... )
+                    col=migr.col[arrow.magnitudes], length=length, ... )
         }
         points( as.vector(rowdummy), as.vector(coldummy),
             cex=cex.fac*ga@N[layers], pch=20 )
