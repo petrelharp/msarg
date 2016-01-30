@@ -18,6 +18,7 @@ setClass("demography", representation(
 
 setMethod("dim", signature=c(x="demography"), definition=function (x) { dim(x[[1]]) } )
 setMethod("length", signature=c(x="demography"), definition=function (x) { length(x@t) } )
+setAs("demography", "list", def=function (from) { from@popStates } )
 setMethod("[[", signature=c(x="demography",i="ANY"), definition=function (x,i) { x@popStates[[i]] } )
 setMethod("[[<-", signature=c(x="demography",i="ANY",value="ANY"), definition=function (x,i,value) { x@popStates[[i]]<-value; return(x) } )
 setMethod("plot", signature=c(x="demography"), definition=function (x,...) {
@@ -318,7 +319,11 @@ plot_layer <- function (ga,
                         alpha=0.05,
                         N.eps=1e-3,
                         do.arrows=TRUE,
-                        arrow.direction=c("forwards","reverse"),
+                        arrow.direction=c("forwards","reverse"), # do arrows for forwards-time migration or reverse?
+                        add=FALSE,
+                        xy=cbind( x=as.vector(row( Matrix(0,nrow=nrow(ga),ncol=ncol(ga)) )),
+                                  y=as.vector(col( Matrix(0,nrow=nrow(ga),ncol=ncol(ga)) )) ),
+                          # location of the points on the map
                         ...) {
     if (all(ga@N==0)) { stop("All population sizes are zero.") }
     # draw a picture of a migration matrix
@@ -326,25 +331,27 @@ plot_layer <- function (ga,
     nrow <- nrow(ga)
     ncol <- ncol(ga)
     if (nrow==1 && ncol==1) {
-        plot( 0, type='n', xlab='', ylab='', xaxt='n', yaxt='n' )
+        if (!add) { plot( 0, type='n', xlab='', ylab='', xaxt='n', yaxt='n' ) }
     } else {
-        rowdummy <- row( Matrix(0,nrow=nrow,ncol=ncol) )
-        coldummy <- col( Matrix(0,nrow=nrow,ncol=ncol) )
-        plot( as.vector(rowdummy), as.vector(coldummy),
-            type='n',
-            cex=cex.fac*ga@N[layers],
-            pch=20, xlim=c(0,nrow+1), ylim=c(0,ncol+1),
-            asp=1, xaxt='n', yaxt='n', xlab='', ylab='')
+        exlims <- function (x) { 1.05 * (x-mean(x)) + mean(x) }
+        if (!add) { 
+            plot( xy, type='n',
+                    xlim=exlims(range(xy[,"x"],finite=TRUE)),
+                    ylim=exlims(range(xy[,"y"],finite=TRUE)),
+                    asp=1, xaxt='n', yaxt='n', xlab='', ylab='')
+        }
         if (do.arrows) {
             lineage.M <- lineage_M(ga)
             this.M <- ga@M[layers,layers]
             # for plotting purposes, 
             # remove lineage migration rates between 'zeroed' populations.
             remove.links <- ( is.na(ga@N) | ( ga@N<=N.eps ) )
-            lineage.M[remove.links,] <- 0.0
-            lineage.M[,remove.links] <- 0.0
-            this.M[remove.links,] <- 0.0
-            this.M[,remove.links] <- 0.0
+            if (any(remove.links)) {
+                lineage.M[remove.links,] <- 0.0
+                lineage.M[,remove.links] <- 0.0
+                this.M[remove.links,] <- 0.0
+                this.M[,remove.links] <- 0.0
+            }
             # indices corresponding to rows and columns of this.M@x
             rind <- rowinds(this.M)
             cind <- colinds(this.M)
@@ -358,10 +365,10 @@ plot_layer <- function (ga,
                     ), nmags )
             # this.lin.M <- lineage.M[layers,layers][cbind(rind,cind)]
             # this.M.vals <- this.M[layers,layers][cbind(rind,cind)]
-            x0 <- rowdummy[rind]
-            x1 <- rowdummy[cind]
-            y0 <- coldummy[rind]
-            y1 <- coldummy[cind]
+            x0 <- xy[rind,"x"]
+            x1 <- xy[cind,"x"]
+            y0 <- xy[rind,"y"]
+            y1 <- xy[cind,"y"]
             upshift <- eps*(y1-y0)
             rightshift <- eps*(x1-x0)
             migr.col <- rev(heat.colors(1.5*nmags)[1:nmags])
@@ -371,8 +378,7 @@ plot_layer <- function (ga,
                     # lwd=lwd.fac*this.lin.M, length=length, ... )
                     col=migr.col[arrow.magnitudes], length=length, ... )
         }
-        points( as.vector(rowdummy), as.vector(coldummy),
-            cex=cex.fac*ga@N[layers], pch=20 )
+        points( xy, cex=cex.fac*ga@N[layers], pch=20 )
     }
 }
 
@@ -480,7 +486,16 @@ restrict_patch <- function (ga, layer, xy, r) {
     return(ga)
 }
 
-logistic_interpolation <- function (dem, t.end, t.begin, nsteps, speed, width, sigma=sqrt(speed*width/sqrt(2)), r=speed/(width*sqrt(2)), dt.per.step=100) {
+logistic_interpolation <- function (dem, 
+                                    t.end, 
+                                    t.begin, 
+                                    nsteps, 
+                                    speed, 
+                                    width, 
+                                    sigma=sqrt(speed*width/sqrt(2)), 
+                                    r=speed/(width*sqrt(2)), 
+                                    dt.per.step=100,
+                                    max.step=0.2) {
     # Do logistic growth to interpolate between population states.
     #  does dt.per.step 'invisible' steps -- it seems essential this is fairly large.
     stopifnot( ( t.end < t.begin ) && ( t.begin <= max(dem@t) ) )
@@ -500,14 +515,22 @@ logistic_interpolation <- function (dem, t.end, t.begin, nsteps, speed, width, s
     # beginning state
     begin.k <- match(t.begin,c(0,new.t))
     new.dem[[ begin.k ]] <- next.ga <- dem[[ga.interval+1]]
+    zeros <- ( (next.ga@N==0) & (end.N==0) )
     # time step length
     dt <- (t.begin-t.end)/(nsteps*dt.per.step)
-    # Laplacian operator -- should really use *migration matrix* for this
-    adj <- (1/4) * grid.adjacency(nrow(dem),ncol(dem),diag=FALSE)
+    # Laplacian operator -- should really use *migration matrix* for this?
+    #  do some gymnastics to get migration matrix if sigma > 1
+    nsig <- max(0,ceiling(log2(dt*sigma^2)))
+    sig2 <- (dt*sigma^2) / 2^nsig
+    adj <- (sig2/4) * grid.adjacency(nrow(dem),ncol(dem),diag=FALSE)
+    diag(adj) <- 1-rowSums(adj)
+    for (k in seq_len(1+nsig)[-1]) { adj <- adj%*%adj }
     for (k in 1:nsteps) {
         for (j in 1:dt.per.step) {
-            next.ga@N <- as.vector( next.ga@N + dt * ( r * next.ga@N * ( end.N - next.ga@N ) 
-                    + (sigma^2/2) * (adj%*%next.ga@N - rowSums(adj)*next.ga@N) ) )
+            ## discrete logistic, but with bounded steps
+            lstep <- pmax(-max.step, pmin(max.step, dt * r * ( end.N - next.ga@N ) ) )
+            next.ga@N <- as.vector( adj %*% ( next.ga@N * ( 1 + lstep ) ) )
+            next.ga@N[zeros] <- 0.0
         }
         new.dem[[ begin.k - k ]] <- next.ga
     }

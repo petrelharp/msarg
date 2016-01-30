@@ -46,7 +46,7 @@ glacier.begin <- 1000        # units of time ago (in Ne) that glaciation began
 Note that `Ne` is actually the number of individuals *per deme*, so the actual total effective population size is much larger, `r nrow*ncol`.
 
 Now, set up the grid,
-and use it to intialize a `demography` object.
+and use it to initialize a `demography` object.
 ```{r init_grid}
 dem <- demography( grid_array(nlayers=1,nrow=nrow,ncol=ncol,N=1,mig.rate=mig.rate) )
 plot(dem[[1]])
