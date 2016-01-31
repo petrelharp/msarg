@@ -2,6 +2,8 @@
 require(Matrix)
 if (!require(Biostrings)) { warning("Need Biostrings to simulate sequence.") }
 
+if (file.exists("plot.phylo.R")) { source("plot.phylo.R") }
+
 ##
 # A demographic model consists of:
 #  - a set of populations (demes)
@@ -17,14 +19,16 @@ setClass("demography", representation(
     ) )
 
 setMethod("dim", signature=c(x="demography"), definition=function (x) { dim(x[[1]]) } )
-setMethod("length", signature=c(x="demography"), definition=function (x) { length(x@t) } )
+setMethod("length", signature=c(x="demography"), definition=function (x) { length(x@popStates) } )
 setAs("demography", "list", def=function (from) { from@popStates } )
 setMethod("[[", signature=c(x="demography",i="ANY"), definition=function (x,i) { x@popStates[[i]] } )
 setMethod("[[<-", signature=c(x="demography",i="ANY",value="ANY"), definition=function (x,i,value) { x@popStates[[i]]<-value; return(x) } )
 setMethod("plot", signature=c(x="demography"), definition=function (x,...) {
+        NN <- sapply( x@popStates, slot, "N" )
+        cex.fac <- 2/quantile(NN[NN>0],.9)
         for (k in seq_along(x@popStates)) {
             readline(paste("Hit enter for t = ", c(0,x@t)[k]))
-            plot(x[[k]], ...)
+            plot(x[[k]], cex.fac=cex.fac, ...)
         }
     } )
 
@@ -155,16 +159,22 @@ msarg_M <- function (ga,t=numeric(0),previous,scale.migration=TRUE) {
     #   so only output the relevant -em commands
     # also: need to transpose and scale by population sizes
     #   since M is forwards-times migration rates,
-    #   and ms takes revese-time ("lineage") migration rates.
+    #   and ms takes reverse-time ("lineage") migration rates.
     # (optionally skip this step to allow ms-style migration input)
     M <- if (scale.migration) { t(lineage_M(ga)) } else { ga@M }
     rind <- rowinds(M)  # yes this is inefficient
     cind <- colinds(M)
+    # don't respecify migration rates that haven't changed
     dothese <- if (missing(previous)) {
             seq_along(M@x)
         } else {
+            # need to check the sparse matrix has the same structure
             old.M <- lineage_M(previous)
-            which( (M@x != old.M@x) | (rind!=rowinds(old.M)) | (cind!=colinds(old.M)) )
+            if ( (length(M@x)!=length(old.M@x)) ) {
+                seq_along(M@x)
+            } else {
+                which( (M@x != old.M@x) | (rind!=rowinds(old.M)) | (cind!=colinds(old.M)) )
+            }
         }
     Marg <- lapply( dothese, function (k) {
             c( t, rind[k], cind[k], M@x[k] )
@@ -179,6 +189,22 @@ lineage_M <- function (ga,eps=min(ga@N[ga@N>0])/1000) {
     cind <- colinds(M)
     M@x <- M@x * (ga@N[rind]+eps) / (ga@N[cind]+eps)  # scale by pop sizes
     return(M)
+}
+
+check_demography <- function (dem,
+                              ga=dem[[length(dem)]],
+                              nstarts=10,
+                              niter=1000) {
+    # check if the longest-ago setup communicates between states
+    # by spreading out mass from from random initial states
+    M <- ga@M
+    M <- M/(2*max(rowSums(M))) + Diagonal(nrow(M),1-rowSums(M))
+    xx <- do.call( rbind, lapply( 1:nstarts, function (k) {
+                        ifelse( 1:nrow(M)==sample.int(nrow(M),1), 1, 0 ) } ) )
+    for (k in 1:niter) {
+        xx <- xx %*% M
+    }
+    return( ! any( colSums(xx) == 0 ) )
 }
 
 ### stuff for calling ms
@@ -248,6 +274,24 @@ tree_dists <- function (trees,sample.config) {
 }
 
 
+# draw vertical lines at particular times on a phylogeny
+abline_phylo <- function (v=NULL,backward=TRUE,root.time=NULL,...) {
+    # from ape::axisPhylo
+    lastPP <- get("last_plot.phylo", envir = .PlotPhyloEnv)
+    xscale <- if (lastPP$direction %in% c("rightwards", "leftwards")) range(lastPP$xx) else range(lastPP$yy)
+    tmp <- lastPP$direction %in% c("leftwards", "downwards")
+    tscale <- c(0, xscale[2] - xscale[1])
+    if (xor(backward, tmp)) tscale <- tscale[2:1]
+    if (!is.null(root.time)) {
+        tscale <- tscale + root.time
+        if (backward) tscale <- tscale - xscale[2]
+    }
+    beta <- diff(xscale)/diff(tscale)
+    alpha <- xscale[1] - beta * tscale[1]
+    abline(v=beta*v+alpha,...)
+    return(invisible(c(alpha=alpha,beta=beta)))
+}
+
 # The state of a demographic model at a given point in time:
 setClass("popArray", representation(
         npop="integer",  # vector of dimensions whose product is number of populations
@@ -310,6 +354,8 @@ plot_admixture_layer <- function (ga,j,k,admix.fac=1,...) {
     return(invisible(admixmat))
 }
 
+.exlims <- function (x) { 1.05 * (x-mean(x)) + mean(x) }
+
 plot_layer <- function (ga,
                         layer,
                         eps=0.05,
@@ -333,11 +379,10 @@ plot_layer <- function (ga,
     if (nrow==1 && ncol==1) {
         if (!add) { plot( 0, type='n', xlab='', ylab='', xaxt='n', yaxt='n' ) }
     } else {
-        exlims <- function (x) { 1.05 * (x-mean(x)) + mean(x) }
         if (!add) { 
             plot( xy, type='n',
-                    xlim=exlims(range(xy[,"x"],finite=TRUE)),
-                    ylim=exlims(range(xy[,"y"],finite=TRUE)),
+                    xlim=.exlims(range(xy[,"x"],finite=TRUE)),
+                    ylim=.exlims(range(xy[,"y"],finite=TRUE)),
                     asp=1, xaxt='n', yaxt='n', xlab='', ylab='')
         }
         if (do.arrows) {
@@ -541,6 +586,7 @@ logistic_interpolation <- function (dem,
         ) )
 }
 
+
 ##
 # stuff for selecting sample locations
 # format:
@@ -555,14 +601,32 @@ sort_sample_config <- function (sample.config) {
     sample.config[order(sample.config[,3],sample.config[,2],sample.config[,1]),,drop=FALSE]
 }
 
-plot_sample_config <- function ( dem, sample.config, sample.cols=rainbow(nrow(sample.config)), add=FALSE, ... ) {
+sample_config_index <- function( sample.config, ga, .dim=dim(ga) ) {
+    # from the row,col,layer information in sample.config,
+    # obtain the index of the sampled locations
+    .dim <- c(.dim,rep(1,3-length(.dim)))
+    dummy <- array(seq_len(prod(.dim)), dim=.dim)
+    return( dummy[ sample.config[,1:3] ] )
+}
+
+plot_sample_config <- function ( 
+                        dem,
+                        sample.config,
+                        sample.cols=rainbow(nrow(sample.config)),
+                        add=FALSE,
+                        xy=cbind( x=as.vector(row( Matrix(0,nrow=nrow(dem),ncol=ncol(dem)) )),
+                                  y=as.vector(col( Matrix(0,nrow=nrow(dem),ncol=ncol(dem)) )) ),
+                        ... ) {
     # first put in the same order as processed by ms:
     sample.config <- sort_sample_config(sample.config)
+    sample.xy <- xy[sample_config_index( sample.config, dem ),]
     if (!add) { 
-        plot( sample.config[,1:2], type='n', xlim=c(0,nrow(dem)+1), ylim=c(0,ncol(dem)+1), xlab='', ylab='', xaxt='n', yaxt='n', asp=1, bty='n' ) 
-        rect( xleft=1, ybottom=1, xright=nrow(dem), ytop=ncol(dem) )
+        # plot( sample.config[,1:2], type='n', xlim=c(0,nrow(dem)+1), ylim=c(0,ncol(dem)+1), xlab='', ylab='', xaxt='n', yaxt='n', asp=1, bty='n' ) 
+        plot( sample.xy, type='n', xlim=.exlims(range(xy[,"x"])), ylim=.exlims(range(xy[,"y"])), 
+             xlab='', ylab='', xaxt='n', yaxt='n', asp=1, bty='n' ) 
+        rect( xleft=min(xy[,"x"]), ybottom=min(xy[,"y"]), xright=max(xy[,"x"]), ytop=max(xy[,"y"]) )
     }
-    text( sample.config[,1:2], 
+    text( sample.xy, 
             labels=tapply( seq_len(sum(sample.config[,4])), rep(1:nrow(sample.config),sample.config[,4]), paste, collapse=',' ),
             col=sample.cols )
 }
