@@ -8,18 +8,39 @@
 # all possibly varying in time, and so hence also:
 #  - an identification of populations between time points
 
+#' @importClassesFrom Matrix dgCMatrix dgTMatrix Matrix
+NULL
+
+#' @importClassesFrom Biostrings DNAStringSet
+NULL
+
 # An entire demographic model strings together states:
-setClass("demography", representation(
+
+#' @export
+methods::setClass("demography", representation(
         popStates="list",       # a list of popArrays
         t="numeric"             # vector of lengths of times ago of transitions between the states
     ) )
 
-setMethod("dim", signature=c(x="demography"), definition=function (x) { dim(x[[1]]) } )
-setMethod("length", signature=c(x="demography"), definition=function (x) { length(x@popStates) } )
-setAs("demography", "list", def=function (from) { from@popStates } )
-setMethod("[[", signature=c(x="demography",i="ANY"), definition=function (x,i) { x@popStates[[i]] } )
-setMethod("[[<-", signature=c(x="demography",i="ANY",value="ANY"), definition=function (x,i,value) { x@popStates[[i]]<-value; return(x) } )
-setMethod("plot", signature=c(x="demography"), definition=function (x,...) {
+# The state of a demographic model at a given point in time:
+
+#' @export
+methods::setClass("popArray", representation(
+        npop="integer",  # vector of dimensions whose product is number of populations
+        N="numeric",     # npop-vector of population sizes
+        G="numeric",     # npop-vector of growth rates
+        M="Matrix"       # (npop x npop) matrix of migration rates
+    ) )
+
+#' @export
+methods::setClass("gridArray", contains="popArray")
+
+methods::setMethod("dim", signature=c(x="demography"), definition=function (x) { dim(x[[1]]) } )
+methods::setMethod("length", signature=c(x="demography"), definition=function (x) { length(x@popStates) } )
+methods::setAs("demography", "list", def=function (from) { from@popStates } )
+methods::setMethod("[[", signature=c(x="demography",i="ANY"), definition=function (x,i) { x@popStates[[i]] } )
+methods::setMethod("[[<-", signature=c(x="demography",i="ANY",value="ANY"), definition=function (x,i,value) { x@popStates[[i]]<-value; return(x) } )
+methods::setMethod("plot", signature=c(x="demography"), definition=function (x,...) {
         NN <- sapply( x@popStates, slot, "N" )
         cex.fac <- 2/quantile(NN[NN>0],.9)
         for (k in seq_along(x@popStates)) {
@@ -28,6 +49,7 @@ setMethod("plot", signature=c(x="demography"), definition=function (x,...) {
         }
     } )
 
+#' @export
 add_to_demography <- function (dem,dt,fn=identity,pop,...,tnew=dt+if(length(dem@t)>0){dem@t[length(dem@t)]}else{0}) {
     # add to a demography by applying a modifier function fn 
     #  to another population model,
@@ -44,22 +66,27 @@ add_to_demography <- function (dem,dt,fn=identity,pop,...,tnew=dt+if(length(dem@
     return(dem)
 }
 
+#' @export
 demography <- function (ga,t) { new("demography",popStates=list(ga),t=numeric(0)) }
 
 ### Stuff for writing ms arguments
-setClass("msarg", contains="namedList")
-setMethod("toString", signature=c(x="msarg"), definition=function (x,sep="\n") {
+
+#' @export
+methods::setClass("msarg", contains="namedList")
+methods::setMethod("toString", signature=c(x="msarg"), definition=function (x,sep="\n") {
         text.x <-  paste( paste( paste(names(x),sapply(lapply(x,unlist),paste,collapse=' ')), collapse=sep ), "\n", sep='' )
         return(invisible(text.x))
     } )
-setMethod("print", signature=c(x="msarg"), definition=function (x,sep="\n",...) {
+methods::setMethod("print", signature=c(x="msarg"), definition=function (x,sep="\n",...) {
         text.x <-  toString(x,sep=sep)
         cat( text.x, ... )
         return(invisible(text.x))
     } )
 
-setGeneric("msarg", function(x,...) { standardGeneric("msarg") })
-setMethod("msarg", signature=c(x="demography"), definition=function (x,nsamp,scale.migration=TRUE,...) {
+#' @export msarg
+methods::setGeneric("msarg", function(x,...) { standardGeneric("msarg") })
+
+methods::setMethod("msarg", signature=c(x="demography"), definition=function (x,nsamp,scale.migration=TRUE,...) {
         ## FROM ms:
         # usage: ms nsam howmany 
         #   Options: 
@@ -157,7 +184,7 @@ msarg_M <- function (ga,t=numeric(0),previous,scale.migration=TRUE) {
     #   since M is forwards-times migration rates,
     #   and ms takes reverse-time ("lineage") migration rates.
     # (optionally skip this step to allow ms-style migration input)
-    M <- if (scale.migration) { t(lineage_M(ga)) } else { ga@M }
+    M <- if (scale.migration) { Matrix::t(lineage_M(ga)) } else { ga@M }
     rind <- rowinds(M)  # yes this is inefficient
     cind <- colinds(M)
     # don't respecify migration rates that haven't changed
@@ -179,6 +206,7 @@ msarg_M <- function (ga,t=numeric(0),previous,scale.migration=TRUE) {
     return(Marg)
 }
 
+#' @export
 lineage_M <- function (ga,eps=min(ga@N[ga@N>0])/1000) {
     M <- ga@M
     rind <- rowinds(M)
@@ -187,6 +215,7 @@ lineage_M <- function (ga,eps=min(ga@N[ga@N>0])/1000) {
     return(M)
 }
 
+#' @export
 check_demography <- function (dem,
                               ga=dem[[length(dem)]],
                               nstarts=10,
@@ -206,9 +235,10 @@ check_demography <- function (dem,
 ### stuff for calling ms
 # general strategy is: put everything in a subdirectory
 
-setGeneric("run_ms", function(x,...) { standardGeneric("run_ms") })
-setMethod("run_ms", signature=c(x="popArray"), definition=function (x,...) { run_ms(demography(x),...) } )
-setMethod("run_ms", signature=c(x="demography"), definition=function (x,nsamp,outdir,theta,trees=FALSE,nreps=1,tofile=TRUE,...) {
+#' @export run_ms
+methods::setGeneric("run_ms", function(x,...) { standardGeneric("run_ms") })
+methods::setMethod("run_ms", signature=c(x="popArray"), definition=function (x,...) { run_ms(demography(x),...) } )
+methods::setMethod("run_ms", signature=c(x="demography"), definition=function (x,nsamp,outdir,theta,trees=FALSE,nreps=1,tofile=TRUE,...) {
         if (missing(theta) & !trees) { stop("Must specify either theta or trees=TRUE.") }
         if (NCOL(nsamp)==4) {
             # assume this is in sample.config format
@@ -240,6 +270,7 @@ setMethod("run_ms", signature=c(x="demography"), definition=function (x,nsamp,ou
 ##
 # processing tree output
 
+#' @export
 trees_from_ms <- function (ms.output) {
     # extract the trees from ms.output
     if ( (length(ms.output)==1) && (file.exists(ms.output)) ) {
@@ -249,6 +280,7 @@ trees_from_ms <- function (ms.output) {
     lapply( ms.output[almost+1], function (x) { ape::read.tree(text=x) } )
 }
 
+#' @export
 tree_dists <- function (trees,sample.config) {
     # get matrix of tree distances
     #  **in the right order**
@@ -271,6 +303,7 @@ tree_dists <- function (trees,sample.config) {
 
 
 # draw vertical lines at particular times on a phylogeny
+#' @export
 abline_phylo <- function (v=NULL,backward=TRUE,root.time=NULL,...) {
     # from ape::axisPhylo
     lastPP <- get("last_plot.phylo", envir = .PlotPhyloEnv)
@@ -288,26 +321,22 @@ abline_phylo <- function (v=NULL,backward=TRUE,root.time=NULL,...) {
     return(invisible(c(alpha=alpha,beta=beta)))
 }
 
-# The state of a demographic model at a given point in time:
-setClass("popArray", representation(
-        npop="integer",  # vector of dimensions whose product is number of populations
-        N="numeric",     # npop-vector of population sizes
-        G="numeric",     # npop-vector of growth rates
-        M="Matrix"       # (npop x npop) matrix of migration rates
-    ) )
+## methods for gridArray's
+methods::setMethod("dim", signature=c(x="gridArray"), definition=function (x) { x@npop } )
 
-setClass("gridArray", contains="popArray")
-setMethod("dim", signature=c(x="gridArray"), definition=function (x) { x@npop } )
-setGeneric("nlayers", function(x,...) { standardGeneric("nlayers") })
-setMethod("nlayers", signature=c(x="gridArray"), definition=function (x) { dim(x)[3] } )
-setGeneric("layer_inds", function(x,...) { standardGeneric("layer_inds") })
-setMethod("layer_inds", signature=c(x="gridArray"), definition=function (x,layer) {
+#' @export nlayers
+methods::setGeneric("nlayers", function(x,...) { standardGeneric("nlayers") })
+methods::setMethod("nlayers", signature=c(x="gridArray"), definition=function (x) { dim(x)[3] } )
+
+#' @export layer_inds
+methods::setGeneric("layer_inds", function(x,...) { standardGeneric("layer_inds") })
+methods::setMethod("layer_inds", signature=c(x="gridArray"), definition=function (x,layer) {
         # tells you which indices in e.g. x@N correspond to layer number 'layer'
         nrow <- x@npop[1]
         ncol <- x@npop[2]
         return( (layer-1) * nrow * ncol + (1:(nrow*ncol)) )
     } )
-setMethod("plot", signature=c(x="gridArray"), definition=function(x,layers=seq_len(nlayers(x)),do.layout=TRUE,...) {
+methods::setMethod("plot", signature=c(x="gridArray"), definition=function(x,layers=seq_len(nlayers(x)),do.layout=TRUE,...) {
         # produces nlayers plots
         nlayers <- nlayers(x)
         if (do.layout) {
@@ -327,21 +356,26 @@ setMethod("plot", signature=c(x="gridArray"), definition=function(x,layers=seq_l
     } )
 
 # methods to get row and column indices of nonzero entries of a (sparse) dgCMatrix
-setGeneric("rowinds", function(x,...) { standardGeneric("rowinds") } )
-setGeneric("colinds", function(x,...) { standardGeneric("colinds") } )
-setMethod("rowinds",signature=c(x="dgCMatrix"), definition=function(x) { x@i+1L } )
-setMethod("colinds",signature=c(x="dgCMatrix"), definition=function(x) { rep(1:ncol(x),times=diff(x@p)) } )
-setMethod("rowinds",signature=c(x="dgTMatrix"), definition=function(x) { x@i+1L } )
-setMethod("colinds",signature=c(x="dgTMatrix"), definition=function(x) { x@j+1L } )
 
+#' @export rowinds
+methods::setGeneric("rowinds", function(x,...) { standardGeneric("rowinds") } )
+
+#' @export colinds
+methods::setGeneric("colinds", function(x,...) { standardGeneric("colinds") } )
+methods::setMethod("rowinds",signature=c(x="dgCMatrix"), definition=function(x) { x@i+1L } )
+methods::setMethod("colinds",signature=c(x="dgCMatrix"), definition=function(x) { rep(1:ncol(x),times=diff(x@p)) } )
+methods::setMethod("rowinds",signature=c(x="dgTMatrix"), definition=function(x) { x@i+1L } )
+methods::setMethod("colinds",signature=c(x="dgTMatrix"), definition=function(x) { x@j+1L } )
+
+#' @export
 plot_admixture_layer <- function (ga,j,k,admix.fac=1,...) {
     # plot patterns of admixture between layers j and k
     # ... admittedly janky.
     nrow <- nrow(ga)
     ncol <- ncol(ga)
     nlayers <- dim(ga)[3]
-    rowdummy <- row( Matrix(0,nrow=nrow,ncol=ncol) )
-    coldummy <- col( Matrix(0,nrow=nrow,ncol=ncol) )
+    rowdummy <- row( Matrix::Matrix(0,nrow=nrow,ncol=ncol) )
+    coldummy <- col( Matrix::Matrix(0,nrow=nrow,ncol=ncol) )
     li.j <- layer_inds(ga,j)
     li.k <- layer_inds(ga,k)
     admixmat <- diag( x=ga@M[li.j,li.k], nrow=length(li.j) )
@@ -352,6 +386,7 @@ plot_admixture_layer <- function (ga,j,k,admix.fac=1,...) {
 
 .exlims <- function (x) { 1.05 * (x-mean(x)) + mean(x) }
 
+#' @export
 plot_layer <- function (ga,
                         layer,
                         eps=0.05,
@@ -363,8 +398,8 @@ plot_layer <- function (ga,
                         do.arrows=TRUE,
                         arrow.direction=c("forwards","reverse"), # do arrows for forwards-time migration or reverse?
                         add=FALSE,
-                        xy=cbind( x=as.vector(row( Matrix(0,nrow=nrow(ga),ncol=ncol(ga)) )),
-                                  y=as.vector(col( Matrix(0,nrow=nrow(ga),ncol=ncol(ga)) )) ),
+                        xy=cbind( x=as.vector(row( Matrix::Matrix(0,nrow=nrow(ga),ncol=ncol(ga)) )),
+                                  y=as.vector(col( Matrix::Matrix(0,nrow=nrow(ga),ncol=ncol(ga)) )) ),
                           # location of the points on the map
                         ...) {
     if (all(ga@N==0)) { stop("All population sizes are zero.") }
@@ -426,6 +461,7 @@ plot_layer <- function (ga,
 ###
 # stuff for manipulating grids and demographies
 
+#' @export
 grid_array <- function (nlayers=1, nrow, ncol, N=1, mig.rate=0, admix.rate=0, G=0) {
     # make a gridArray object
     # consisting of a stack of (nrow x ncol) grids
@@ -463,6 +499,7 @@ grid_array <- function (nlayers=1, nrow, ncol, N=1, mig.rate=0, admix.rate=0, G=
         ) )
 }
 
+#' @export
 modify_grid_layer <- function (ga, layer, dN=1, dG=1, dM=1) {
     # modify a given layer of a grid_array
     # by multiplying N by dN, etcetera.
@@ -479,12 +516,13 @@ modify_grid_layer <- function (ga, layer, dN=1, dG=1, dM=1) {
     return(ga)
 }
 
+#' @export
 add_barrier <- function (ga, layer, rows=numeric(0), cols=numeric(0)) {
     # remove migration between rows and rows+1 and cols and cols+1
     layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
-    dummy <- Matrix(0,nrow=nrow,ncol=ncol)
+    dummy <- Matrix::Matrix(0,nrow=nrow,ncol=ncol)
     for (rn in rows) {
         zeros <- ( ( rowinds(ga@M) %in% ( (layer-1)*nrow*ncol + which(row(dummy)==rn) ) ) & ( colinds(ga@M) %in% ( (layer-1)*nrow*ncol + which(row(dummy)==rn+1) ) ) )
         zeros <- zeros | ( ( rowinds(ga@M) %in% ( (layer-1)*nrow*ncol + which(row(dummy)==rn+1) ) ) & ( colinds(ga@M) %in% ( (layer-1)*nrow*ncol + which(row(dummy)==rn) ) ) )
@@ -498,6 +536,7 @@ add_barrier <- function (ga, layer, rows=numeric(0), cols=numeric(0)) {
     return(ga)
 }
 
+#' @export
 modify_migration <- function (ga, layer, doutM=1, dinM=1) {
     # modify inmigration rates on a given layer:
     #   here, dinM is a vector of multiplicative changes to inmigration rates 
@@ -512,14 +551,15 @@ modify_migration <- function (ga, layer, doutM=1, dinM=1) {
     return(ga)
 }
 
+#' @export
 restrict_patch <- function (ga, layer, xy, r) {
     # zero out all populations
     #   more than distance r from (row,col) location xy
     layers <- layer_inds(ga,layer)
     nrow <- nrow(ga)
     ncol <- ncol(ga)
-    rowdummy <- row( Matrix(0,nrow=nrow,ncol=ncol) )
-    coldummy <- col( Matrix(0,nrow=nrow,ncol=ncol) )
+    rowdummy <- row( Matrix::Matrix(0,nrow=nrow,ncol=ncol) )
+    coldummy <- col( Matrix::Matrix(0,nrow=nrow,ncol=ncol) )
     base.ind <- which( ( rowdummy == xy[1] ) & ( coldummy == xy[2] ) )
     gdists <- sqrt( (rowdummy-xy[1])^2 + (coldummy-xy[2])^2 )
     zero.these <- layers[ gdists > r ]
@@ -527,6 +567,7 @@ restrict_patch <- function (ga, layer, xy, r) {
     return(ga)
 }
 
+#' @export
 logistic_interpolation <- function (dem, 
                                     t.end, 
                                     t.begin, 
@@ -593,10 +634,12 @@ logistic_interpolation <- function (dem,
 
 ## TO-DO: add a class for sample config
 
+#' @export
 sort_sample_config <- function (sample.config) {
     sample.config[order(sample.config[,3],sample.config[,2],sample.config[,1]),,drop=FALSE]
 }
 
+#' @export
 sample_config_index <- function( sample.config, ga, .dim=dim(ga) ) {
     # from the row,col,layer information in sample.config,
     # obtain the index of the sampled locations
@@ -605,13 +648,14 @@ sample_config_index <- function( sample.config, ga, .dim=dim(ga) ) {
     return( dummy[ sample.config[,1:3] ] )
 }
 
+#' @export
 plot_sample_config <- function ( 
                         dem,
                         sample.config,
                         sample.cols=rainbow(nrow(sample.config)),
                         add=FALSE,
-                        xy=cbind( x=as.vector(row( Matrix(0,nrow=nrow(dem),ncol=ncol(dem)) )),
-                                  y=as.vector(col( Matrix(0,nrow=nrow(dem),ncol=ncol(dem)) )) ),
+                        xy=cbind( x=as.vector(row( Matrix::Matrix(0,nrow=nrow(dem),ncol=ncol(dem)) )),
+                                  y=as.vector(col( Matrix::Matrix(0,nrow=nrow(dem),ncol=ncol(dem)) )) ),
                         ... ) {
     # first put in the same order as processed by ms:
     sample.config <- sort_sample_config(sample.config)
@@ -627,6 +671,7 @@ plot_sample_config <- function (
             col=sample.cols )
 }
 
+#' @export
 nsample_vector <- function (ga, samps, dims=dim(ga)) {
     # samps is a four-column matrix,
     #    of row number, column number, layer number, and number of samples.
@@ -646,6 +691,7 @@ nsample_vector <- function (ga, samps, dims=dim(ga)) {
     return( as.vector(sample.config) )
 }
 
+#' @export
 sample_locations <- function (ga, n, each=1, dims=dim(ga)) {
     # Sample uniformly at random, with replacement, `n` locations to sample from.
     n <- each * tabulate( sample.int( prod(dims), n, replace=TRUE ), nbins=prod(dims) )
@@ -654,6 +700,7 @@ sample_locations <- function (ga, n, each=1, dims=dim(ga)) {
     return( cbind(x,n=n[n>0]) )
 }
 
+#' @export
 sample_real_locs <- function (real.locs, ga, each=1, dims=dim(ga)) {
     # Translate "real" locations to their nearest grid point
     locs <- cbind( i=1+floor(dim(ga)[1]*real.locs[,1]), j=1+floor(dim(ga)[2]*real.locs[,2]) )
@@ -666,6 +713,7 @@ sample_real_locs <- function (real.locs, ga, each=1, dims=dim(ga)) {
     return(sample.config)
 }
 
+#' @export
 distance_from_sample <- function (sample.config,rowscale=1,colscale=1) {
     # return a matrix of distances between all samples
     x <- sample.config[,1]*rowscale
@@ -709,43 +757,49 @@ grid.adjacency <- function (nrow,ncol=nrow,diag=TRUE,symmetric=TRUE) {
 ###
 # stuff to read in and do things with ms output
 
-setGeneric("nsamples", function(x,...) { standardGeneric("nsamples") })
-setGeneric("msseq", function(x,nloci,...) { standardGeneric("msseq") })
-setGeneric("pimat", function(x,nloci,...) { standardGeneric("pimat") })
+#' @export nsamples
+methods::setGeneric("nsamples", function(x,...) { standardGeneric("nsamples") })
+
+#' @export msseq
+methods::setGeneric("msseq", function(x,nloci,...) { standardGeneric("msseq") })
+
+#' @export pimat
+methods::setGeneric("pimat", function(x,nloci,...) { standardGeneric("pimat") })
 
 # this is the output of one ms run
-setClass("msrun", representation(
+methods::setClass("msrun", representation(
         nsamples="numeric",       # number of sampled sequences
         call="character",       # call to ms
         runs="list"             # list of msout objects
     ) )
-setMethod("length", signature=c(x="msrun"), definition=function (x) { length(x@runs) } )
-setMethod("[[", signature=c(x="msrun",i="ANY"), definition=function (x,i) { x@runs[[i]] } )
-setMethod("[[<-", signature=c(x="msrun",i="ANY",value="ANY"), definition=function (x,i,value) { x@runs[[i]]<-value; return(x) } )
-setMethod("nsamples", signature=c(x="msrun"), definition=function (x) { x@nsamples } )
-setMethod("msseq", signature=c(x="msrun",nloci="numeric"), definition=function (x,nloci) { x@runs <- lapply(x@runs,msseq,nloci=nloci); return(x) } )
-setMethod("pimat", signature=c(x="msrun"), definition=function (x) { 
-        pimat.seq( do.call( xscat, lapply( x@runs, slot, "sequence" ) ) )
+methods::setMethod("length", signature=c(x="msrun"), definition=function (x) { length(x@runs) } )
+methods::setMethod("[[", signature=c(x="msrun",i="ANY"), definition=function (x,i) { x@runs[[i]] } )
+methods::setMethod("[[<-", signature=c(x="msrun",i="ANY",value="ANY"), definition=function (x,i,value) { x@runs[[i]]<-value; return(x) } )
+methods::setMethod("nsamples", signature=c(x="msrun"), definition=function (x) { x@nsamples } )
+methods::setMethod("msseq", signature=c(x="msrun",nloci="numeric"), definition=function (x,nloci) { x@runs <- lapply(x@runs,msseq,nloci=nloci); return(x) } )
+methods::setMethod("pimat", signature=c(x="msrun"), definition=function (x) { 
+        pimat.seq( do.call( Biostrings::xscat, lapply( x@runs, slot, "sequence" ) ) )
     } )
 
 # this is the output of one ms replicate
-setClass("msrep", representation(
+methods::setClass("msrep", representation(
         segsites="numeric",     # number of segregating sites
         positions="numeric",    # locations (floats) of the sites
         alleles="matrix"        # binary matrix of alleles
     ) )
-setMethod("nsamples", signature=c(x="msrep"), definition=function (x) { nrow(x@alleles) } )
-setMethod("msseq", signature=c(x="msrep",nloci="numeric"), definition=function (x,nloci) { make_msseq(x,nloci) } )
-setMethod("names", signature=c(x="msrep"), definition=function (x) { rownames(x@alleles) } )
-setMethod("pimat", signature=c(x="msrep"), definition=function (x) { pimat.seq(x@sequence) } )
+methods::setMethod("nsamples", signature=c(x="msrep"), definition=function (x) { nrow(x@alleles) } )
+methods::setMethod("msseq", signature=c(x="msrep",nloci="numeric"), definition=function (x,nloci) { make_msseq(x,nloci) } )
+methods::setMethod("names", signature=c(x="msrep"), definition=function (x) { rownames(x@alleles) } )
+methods::setMethod("pimat", signature=c(x="msrep"), definition=function (x) { pimat.seq(x@sequence) } )
 
 # and, this is what we get after converting to sequence
-setClass("msseq", contains="msrep",
+methods::setClass("msseq", contains="msrep",
     representation(
         sequence="DNAStringSet"     # from Bioconductor::Biostrings
     ) )
-setMethod("show",signature=c(object="msseq"), definition=function (object) { show(object@sequence) })
+methods::setMethod("show",signature=c(object="msseq"), definition=function (object) { show(object@sequence) })
 
+#' @export
 to_fasta <- function (msrun,file,...) {
     # 'file' should be a path with a "%" in where the index of the replicate is inserted
     fnames <- sapply( seq_along(msrun@runs), function (k) { gsub("%",k,file) } )
@@ -773,6 +827,7 @@ split_fasta <- function (fasta,output=file.path(gsub("[.]fa$","",fasta),"%.fa"))
     return(dirname(output))
 }
 
+#' @export
 sample_reads <- function (
         infiles,
         coverage,
@@ -817,6 +872,7 @@ sample_reads <- function (
     return(count.files)
 }
 
+#' @export
 read_msrun <- function (ms.output,
         text=paste(scan(file.path(ms.output,"msoutput.txt"),what='char',sep='\n'),collapse='\n')
     ) {
@@ -894,6 +950,7 @@ add_error_seq <- function (seq,error.prob) {
     return(seq)
 }
 
+#' @export
 pimat.seq <- function (sequence) {
     # compute the matrix of mean pairwise distances
     Biostrings::stringDist(sequence,method="hamming")/nchar(sequence[[1]])

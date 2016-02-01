@@ -6,12 +6,13 @@ Description: Create demographic scenarios, visualize them, and simulate from
     them using Dick Hudson's program ms (and other compatible simulators).
 Depends:
     R (>= 3.2.3)
-License: GPL3
+License: CC0
 LazyData: true
 Imports:
-    Matrix
+    Matrix,
+    methods,
+    Biostrings
 Suggests:
-    Biostrings,
     ape,
     knitr,
     rmarkdown
