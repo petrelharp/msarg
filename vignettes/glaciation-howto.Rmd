@@ -7,7 +7,7 @@ date: May 5, 2015
 
 ```{r setup, include=FALSE}
 require(ape)
-source("msarg.R")
+library(msarg)
 fig.dim <- 5
 knitr::opts_chunk$set(fig.height=fig.dim,fig.width=2*fig.dim,fig.align='center')
 ```

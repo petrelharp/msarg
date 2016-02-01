@@ -13,6 +13,15 @@ Have a look at the examples:
 
 ... and there's a bit more documentation, sort of in [this document](http://petrelharp.github.io/msarg/using-msarg.html).
 
+intalling
+---------
+
+This should do it:
+
+```
+devtools::install_github("petrelharp/msarg")
+```
+
 getting ms
 ----------
 
