@@ -37,6 +37,8 @@ methods::setClass("gridArray", contains="popArray")
 
 methods::setMethod("dim", signature=c(x="demography"), definition=function (x) { dim(x[[1]]) } )
 methods::setMethod("length", signature=c(x="demography"), definition=function (x) { length(x@popStates) } )
+
+#' @export as.list
 methods::setAs("demography", "list", def=function (from) { from@popStates } )
 methods::setMethod("[[", signature=c(x="demography",i="ANY"), definition=function (x,i) { x@popStates[[i]] } )
 methods::setMethod("[[<-", signature=c(x="demography",i="ANY",value="ANY"), definition=function (x,i,value) { x@popStates[[i]]<-value; return(x) } )
@@ -611,7 +613,7 @@ logistic_interpolation <- function (dem,
         for (j in 1:dt.per.step) {
             ## discrete logistic, but with bounded steps
             lstep <- pmax(-max.step, pmin(max.step, dt * r * ( end.N - next.ga@N ) ) )
-            next.ga@N <- as.vector( adj %*% ( next.ga@N * ( 1 + lstep ) ) )
+            next.ga@N <- Matrix::as.vector( adj %*% ( next.ga@N * ( 1 + lstep ) ) )
             next.ga@N[zeros] <- 0.0
         }
         new.dem[[ begin.k - k ]] <- next.ga

@@ -35,20 +35,20 @@ Initialization
 
 First, let's choose the parameters for the grid:
 ```{r params}
-nrow <- 100               # width of grid
-ncol <- 40                # height of grid
+grid.nrow <- 100               # width of grid
+grid.ncol <- 40                # height of grid
 glacier.width <- 70        # with of the glacier (in the middle)
 mig.rate <- 1             # migration rate between neighbors in the grid
 growth.time <- 200          # units of time (in Ne) it took to re-expand post-glacier
 glacier.end <- 500          # units of time ago (in Ne) that glaciation ended
 glacier.begin <- 1000        # units of time ago (in Ne) that glaciation began
 ```
-Note that `Ne` is actually the number of individuals *per deme*, so the actual total effective population size is much larger, `r nrow*ncol`.
+Note that `Ne` is actually the number of individuals *per deme*, so the actual total effective population size is much larger, `r grid.nrow*grid.ncol`.
 
 Now, set up the grid,
 and use it to initialize a `demography` object.
 ```{r init_grid}
-dem <- demography( grid_array(nlayers=1,nrow=nrow,ncol=ncol,N=1,mig.rate=mig.rate) )
+dem <- demography( grid_array(nlayers=1,nrow=grid.nrow,ncol=grid.ncol,N=1,mig.rate=mig.rate) )
 plot(dem[[1]])
 ```
 
@@ -146,8 +146,8 @@ layout(t(1:2))
 for (tree in tree.output) {
     plot_sample_config( dem, sample.config )
     abline(v=(nrow(dem)+c(1,-1)*glacier.width)/2, lty=2, lwd=2, col='grey')
-    ape::plot.phylo( tree, tip.color=sample.cols[findInterval(as.numeric(tree$tip.label),1+c(0,cumsum(sample.config[,4])))] )
-    ape::axisPhylo(1)
+    plot.phylo( tree, tip.color=sample.cols[findInterval(as.numeric(tree$tip.label),1+c(0,cumsum(sample.config[,4])))] )
+    axisPhylo(1)
     abline(v=get("last_plot.phylo",envir=.PlotPhyloEnv)$x.lim[2]-c(glacier.end,glacier.begin), lty=2, lwd=2, col='grey')  # grrr, ape::
 }
 ```
