@@ -2,12 +2,18 @@ Package: msarg
 Title: Simulate Spatial Demographies with ms
 Version: 0.1
 Authors@R: person("Peter", "Ralph", email = "peter.harp@gmail.com", role = c("aut", "cre"))
-Description: Create demographic scenarios, visualize them, and simulate from them using Dick Hudson's program ms (and other compatible simulators).
-Depends: R (>= 3.2.3)
+Description: Create demographic scenarios, visualize them, and simulate from
+    them using Dick Hudson's program ms (and other compatible simulators).
+Depends:
+    R (>= 3.2.3)
 License: GPL3
 LazyData: true
-Imports: Matrix
-Suggests: Biostrings, ape,
+Imports:
+    Matrix
+Suggests:
+    Biostrings,
+    ape,
     knitr,
     rmarkdown
 VignetteBuilder: knitr
+RoxygenNote: 5.0.1

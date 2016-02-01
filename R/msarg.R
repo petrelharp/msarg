@@ -1,8 +1,4 @@
 
-require(Matrix)
-if (!require(Biostrings)) { warning("Need Biostrings to simulate sequence.") }
-
-if (file.exists("plot.phylo.R")) { source("plot.phylo.R") }
 
 ##
 # A demographic model consists of:
@@ -198,13 +194,13 @@ check_demography <- function (dem,
     # check if the longest-ago setup communicates between states
     # by spreading out mass from from random initial states
     M <- ga@M
-    M <- M/(2*max(rowSums(M))) + Diagonal(nrow(M),1-rowSums(M))
+    M <- M/(2*max(Matrix::rowSums(M))) + Matrix::Diagonal(nrow(M),1-Matrix::rowSums(M))
     xx <- do.call( rbind, lapply( 1:nstarts, function (k) {
                         ifelse( 1:nrow(M)==sample.int(nrow(M),1), 1, 0 ) } ) )
     for (k in 1:niter) {
         xx <- xx %*% M
     }
-    return( ! any( colSums(xx) == 0 ) )
+    return( ! any( Matrix::colSums(xx) == 0 ) )
 }
 
 ### stuff for calling ms
@@ -447,7 +443,7 @@ grid_array <- function (nlayers=1, nrow, ncol, N=1, mig.rate=0, admix.rate=0, G=
     dim(admix.rate) <- c(nlayers,nlayers)
     G <- rep_len(G,nn*nlayers)
     # start to build the migration matrix
-    M <- kronecker( admix.rate, Diagonal(n=nn,x=1) )
+    M <- kronecker( admix.rate, Matrix::Diagonal(n=nn,x=1) )
     # avoid bugs with dgTMatrix subsetting
     if (class(M)=="dtTMatrix") { # no method for going from dtTMatrix to dgCMatrix??
         M <- as(M,"dgTMatrix")
@@ -568,7 +564,7 @@ logistic_interpolation <- function (dem,
     nsig <- max(0,ceiling(log2(dt*sigma^2)))
     sig2 <- (dt*sigma^2) / 2^nsig
     adj <- (sig2/4) * grid.adjacency(nrow(dem),ncol(dem),diag=FALSE)
-    diag(adj) <- 1-rowSums(adj)
+    diag(adj) <- 1-Matrix::rowSums(adj)
     for (k in seq_len(1+nsig)[-1]) { adj <- adj%*%adj }
     for (k in 1:nsteps) {
         for (j in 1:dt.per.step) {
@@ -706,7 +702,7 @@ grid.adjacency <- function (nrow,ncol=nrow,diag=TRUE,symmetric=TRUE) {
     usethese <- ! ( is.na(adj$j) | !.ob(k.to.ij(adj$j,nrow),nrow,ncol) | !.ob(k.to.ij(adj$i,nrow),nrow,ncol) )
     if (symmetric) { usethese <- ( usethese & ( adj$i <= adj$j ) ) }
     # add 1 since we worked 0-based above; sparseMatrix (unlike underlying representation) is 1-based.
-    A <- with( subset(adj, usethese ), sparseMatrix( i=i+1L, j=j+1L, x=1.0, dims=c(nrow*ncol,nrow*ncol), symmetric=symmetric ) )
+    A <- with( subset(adj, usethese ), Matrix::sparseMatrix( i=i+1L, j=j+1L, x=1.0, dims=c(nrow*ncol,nrow*ncol), symmetric=symmetric ) )
     return(A)
 }
 

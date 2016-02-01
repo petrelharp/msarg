@@ -1,6 +1,6 @@
 #!/usr/bin/Rscript
 
-source("../msarg.R",chdir=TRUE)
+library(msarg)
 
 ##
 # a 2x3 grid, sampling at three corners:
