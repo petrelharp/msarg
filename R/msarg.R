@@ -38,7 +38,7 @@ methods::setClass("gridArray", contains="popArray")
 methods::setMethod("dim", signature=c(x="demography"), definition=function (x) { dim(x[[1]]) } )
 methods::setMethod("length", signature=c(x="demography"), definition=function (x) { length(x@popStates) } )
 
-#' @export as.list
+#' @export
 methods::setAs("demography", "list", def=function (from) { from@popStates } )
 methods::setMethod("[[", signature=c(x="demography",i="ANY"), definition=function (x,i) { x@popStates[[i]] } )
 methods::setMethod("[[<-", signature=c(x="demography",i="ANY",value="ANY"), definition=function (x,i,value) { x@popStates[[i]]<-value; return(x) } )
@@ -189,19 +189,17 @@ msarg_M <- function (ga,t=numeric(0),previous,scale.migration=TRUE) {
     M <- if (scale.migration) { Matrix::t(lineage_M(ga)) } else { ga@M }
     rind <- rowinds(M)  # yes this is inefficient
     cind <- colinds(M)
+    # don't do the diagonal
+    dothese <- ( rind != cind )
     # don't respecify migration rates that haven't changed
-    dothese <- if (missing(previous)) {
-            seq_along(M@x)
-        } else {
-            # need to check the sparse matrix has the same structure
-            old.M <- lineage_M(previous)
-            if ( (length(M@x)!=length(old.M@x)) ) {
-                seq_along(M@x)
-            } else {
-                which( (M@x != old.M@x) | (rind!=rowinds(old.M)) | (cind!=colinds(old.M)) )
-            }
+    if (!missing(previous)) {
+        # note: if structure of matrix has changed will respecify some that don't need to be (no harm)
+        old.M <- lineage_M(previous)
+        if ( (length(M@x)==length(old.M@x)) ) {
+            dothese <- ( dothese & ( (M@x != old.M@x) | (rind!=rowinds(old.M)) | (cind!=colinds(old.M)) ) )
         }
-    Marg <- lapply( dothese, function (k) {
+    }
+    Marg <- lapply( which(dothese), function (k) {
             c( t, rind[k], cind[k], M@x[k] )
         } )
     names( Marg ) <- rep(if (length(t)>0){"-em"}else{"-m"},length(Marg))
