@@ -238,13 +238,21 @@ check_demography <- function (dem,
 #' @export run_ms
 methods::setGeneric("run_ms", function(x,...) { standardGeneric("run_ms") })
 methods::setMethod("run_ms", signature=c(x="popArray"), definition=function (x,...) { run_ms(demography(x),...) } )
-methods::setMethod("run_ms", signature=c(x="demography"), definition=function (x,nsamp,outdir,theta,trees=FALSE,nreps=1,tofile=TRUE,...) {
+methods::setMethod("run_ms", signature=c(x="demography"), 
+    definition=function (x,
+                         nsamp,
+                         outdir,
+                         theta,
+                         trees=FALSE,
+                         nreps=1,
+                         tofile=TRUE,
+                         ...) {
         if (missing(theta) & !trees) { stop("Must specify either theta or trees=TRUE.") }
         if (NCOL(nsamp)==4) {
             # assume this is in sample.config format
             nsamp <- nsample_vector(x[[1]],nsamp)
         }
-        msarg <- msarg(x,nsamp,...)
+        ms.arg <- msarg(x,nsamp,...)
         if (tofile) {
             if (missing(outdir)) {
                 while (TRUE) {
@@ -255,12 +263,12 @@ methods::setMethod("run_ms", signature=c(x="demography"), definition=function (x
             cat("Outputting to ", outdir, " .\n")
             dir.create(outdir,showWarnings=FALSE)
             msarg.file <- file.path(outdir,"msarg.txt")
-            print(msarg,file=msarg.file,sep='  ')
+            cat(toString(ms.arg),file=msarg.file)
         }
         ms.call <- paste( "ms", sum(nsamp), nreps, 
             if (!missing(theta)) { paste("-t",theta) } else {""},
             if (trees) { "-T" } else {""},
-            if (tofile) { paste("-f", msarg.file) } else { toString(msarg,sep=' ') },
+            if (tofile) { paste("-f", msarg.file) } else { toString(ms.arg,sep=' ') },
             if (tofile) { paste( ">", file.path(outdir,"msoutput.txt") ) } else { "" } 
             ) 
         ms.results <- system( ms.call, intern=TRUE )
