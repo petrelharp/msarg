@@ -292,29 +292,38 @@ trees_from_ms <- function (ms.output) {
 tree_dists <- function (trees,sample.config) {
     # get matrix of tree distances
     #  **in the right order**
-    # first put in the same order as processed by ms:
-    sample.config.ord <- order(sample.config[,3],sample.config[,2],sample.config[,1])
-    #  after reordering, sample.config[k,] is the k-th *group* of output*s* from ms
-    sample.config <- sample.config[sample.config.ord,,drop=FALSE]
-    tip_order <- function (tree) {
-        # tip.ord[k] says which *reordered* group the k-th tip is in
-        tip.ord <- findInterval(as.numeric(tree$tip.label),1+c(0,cumsum(sample.config[,4])))
-        # so the k-th tip is in the sample.config.ord[tip.ord[k]]-th original group
-        # rank(sample.config.ord[tip.ord],ties.method="first")  # this MISTAKE ends up putting nearby leaves close to each other, strangely
-        order(sample.config.ord[tip.ord],as.numeric(tree$tip.label))
-    }
+    tip_order <- tip_order_fn(sample.config)
     lapply( trees, function (tree) {
             ord <- tip_order(tree)
             ape::cophenetic.phylo(tree)[ord,ord]
         } )
 }
 
+#' @export
+tip_order_fn <- function (sample.config) {
+    # return the vector of indices that will reorder the tips of a tree to match sample.config
+    # first put in the same order as processed by ms:
+    sample.config.ord <- order(sample.config[,3],sample.config[,2],sample.config[,1])
+    #  after reordering, sample.config[k,] is the k-th *group* of output*s* from ms
+    sample.config <- sample.config[sample.config.ord,,drop=FALSE]
+    return( function (tree) {
+        # tip.ord[k] says which *reordered* group the k-th tip is in
+        tip.ord <- findInterval(as.numeric(tree$tip.label),1+c(0,cumsum(sample.config[,4])))
+        # so the k-th tip is in the sample.config.ord[tip.ord[k]]-th original group
+        # rank(sample.config.ord[tip.ord],ties.method="first")  # this MISTAKE ends up putting nearby leaves close to each other, strangely
+        order(sample.config.ord[tip.ord],as.numeric(tree$tip.label))
+    } )
+}
+
 
 # draw vertical lines at particular times on a phylogeny
 #' @export
-abline_phylo <- function (v=NULL,backward=TRUE,root.time=NULL,...) {
+abline_phylo <- function (v=NULL,
+                          backward=TRUE,
+                          root.time=NULL,
+                          lastPP= get("last_plot.phylo", envir = .PlotPhyloEnv),
+                          ...) {
     # from ape::axisPhylo
-    lastPP <- get("last_plot.phylo", envir = .PlotPhyloEnv)
     xscale <- if (lastPP$direction %in% c("rightwards", "leftwards")) range(lastPP$xx) else range(lastPP$yy)
     tmp <- lastPP$direction %in% c("leftwards", "downwards")
     tscale <- c(0, xscale[2] - xscale[1])
@@ -660,10 +669,11 @@ sample_config_index <- function( sample.config, ga, .dim=dim(ga) ) {
 plot_sample_config <- function ( 
                         dem,
                         sample.config,
-                        sample.cols=rainbow(nrow(sample.config)),
+                        col=rainbow(nrow(sample.config)),
                         add=FALSE,
                         xy=cbind( x=as.vector(row( Matrix::Matrix(0,nrow=nrow(dem),ncol=ncol(dem)) )),
                                   y=as.vector(col( Matrix::Matrix(0,nrow=nrow(dem),ncol=ncol(dem)) )) ),
+                        labels=tapply( seq_len(sum(sample.config[,4])), rep(1:nrow(sample.config),sample.config[,4]), paste, collapse=',' ),
                         ... ) {
     # first put in the same order as processed by ms:
     sample.config <- sort_sample_config(sample.config)
@@ -674,9 +684,7 @@ plot_sample_config <- function (
              xlab='', ylab='', xaxt='n', yaxt='n', asp=1, bty='n' ) 
         rect( xleft=min(xy[,"x"]), ybottom=min(xy[,"y"]), xright=max(xy[,"x"]), ytop=max(xy[,"y"]) )
     }
-    text( sample.xy, 
-            labels=tapply( seq_len(sum(sample.config[,4])), rep(1:nrow(sample.config),sample.config[,4]), paste, collapse=',' ),
-            col=sample.cols )
+    text( sample.xy, labels=labels, col=col, ... )
 }
 
 #' @export
