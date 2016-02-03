@@ -1,4 +1,3 @@
-library(testthat)
 library(msarg)
 
 context("refugia")
@@ -39,52 +38,54 @@ if (interactive()) {
 
 sample.config <- sample_locations( dem, n=30, each=2 )
 
+ms.output <- "ms_testing"
 test_that( "running with reexpansion", {
-    expect_that( ms.output <- run_ms( dem, nsamp=sample.config, trees=TRUE, nreps=3 ),
+    expect_that( run_ms( dem, nsamp=sample.config, trees=TRUE, nreps=3, outdir=ms.output ),
                  not(throws_error()) );
-    expect_equal_to_reference( tree.output <- trees_from_ms( file.path(ms.output,"msoutput.txt") ), "testcache/saved-refugia-trees.Rd" )
+    expect_equal_to_reference( trees_from_ms( file.path(ms.output,"msoutput.txt") ), "testcache/saved-refugia-trees.Rd" )
     } )
 
 unlink(file.path(ms.output,"msoutput.txt"))
 unlink(file.path(ms.output,"msarg.txt"))
 unlink(ms.output)
 
+if (FALSE) {  # takes too long, not really testing anything
 
-context("larger pop sizes")
+    context("larger pop sizes")
 
-big.dem <- dem
-for (k in 1:length(big.dem)) { big.dem[[k]]@N <- big.dem[[k]]@N * 1e4 }
+    big.dem <- dem
+    for (k in 1:length(big.dem)) { big.dem[[k]]@N <- big.dem[[k]]@N * 1e4 }
 
-test_that( "reexpansion, big pops", {
-    expect_that( ms.output <- run_ms( big.dem, nsamp=sample.config, trees=TRUE, nreps=3 ),
-                 not(throws_error()) );
-    expect_equal_to_reference( tree.output <- trees_from_ms( file.path(ms.output,"msoutput.txt") ), "testcache/saved-refugia-trees-2.Rd" )
-    } )
-
-
-unlink(file.path(ms.output,"msoutput.txt"))
-unlink(file.path(ms.output,"msarg.txt"))
-unlink(ms.output)
+    test_that( "reexpansion, big pops", {
+        expect_that( run_ms( big.dem, nsamp=sample.config, trees=TRUE, nreps=3, outdir=ms.output ),
+                     not(throws_error()) );
+        expect_equal_to_reference( trees_from_ms( file.path(ms.output,"msoutput.txt") ), "testcache/saved-refugia-trees-2.Rd" )
+        } )
 
 
-
-context("smaller migration rates")
-
-slow.dem <- dem
-for (k in 1:length(slow.dem)) { slow.dem[[k]]@M@x <- slow.dem[[k]]@M@x * 1e-8 }
-
-test_that( "reexpansion, small migration rates", {
-    expect_that( 
-            ms.output <- run_ms( slow.dem, nsamp=sample.config, trees=TRUE, nreps=3 )
-            , not(throws_error()) );
-    expect_equal_to_reference( 
-            tree.output <- trees_from_ms( file.path(ms.output,"msoutput.txt") )
-            , "testcache/saved-refugia-trees-3.Rd" )
-    } )
+    unlink(file.path(ms.output,"msoutput.txt"))
+    unlink(file.path(ms.output,"msarg.txt"))
+    unlink(ms.output)
 
 
-unlink(file.path(ms.output,"msoutput.txt"))
-unlink(file.path(ms.output,"msarg.txt"))
-unlink(ms.output)
+
+    context("smaller migration rates")
+
+    slow.dem <- dem
+    for (k in 1:length(slow.dem)) { slow.dem[[k]]@M@x <- slow.dem[[k]]@M@x * 1e-8 }
+
+    test_that( "reexpansion, small migration rates", {
+        expect_that( 
+                run_ms( slow.dem, nsamp=sample.config, trees=TRUE, nreps=3, outdir=ms.output )
+                , not(throws_error()) );
+        expect_equal_to_reference( 
+                trees_from_ms( file.path(ms.output,"msoutput.txt") )
+                , "testcache/saved-refugia-trees-3.Rd" )
+        } )
 
 
+    unlink(file.path(ms.output,"msoutput.txt"))
+    unlink(file.path(ms.output,"msarg.txt"))
+    unlink(ms.output)
+
+}
