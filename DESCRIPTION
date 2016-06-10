@@ -9,11 +9,11 @@ Depends:
 License: CC0
 LazyData: true
 Imports:
+    ape,
     Matrix,
     methods,
     Biostrings
 Suggests:
-    ape,
     knitr,
     testthat,
     rmarkdown

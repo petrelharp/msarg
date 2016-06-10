@@ -1,4 +1,3 @@
-library(msarg)
 
 context("refugia")
 
@@ -30,19 +29,12 @@ dem <- logistic_interpolation( dem,
 
 dem <- add_to_demography( dem, tnew=glacier.begin, pop=1 )
 
-if (interactive()) {
-    plot(dem,do.arrows=FALSE)
-
-    matplot( t(sapply( as(dem,"list"), slot, "N" )), type='l' )
-}
-
 sample.config <- sample_locations( dem, n=30, each=2 )
 
 ms.output <- "ms_testing"
 test_that( "running with reexpansion", {
-    expect_that( run_ms( dem, nsamp=sample.config, trees=TRUE, nreps=3, outdir=ms.output ),
-                 not(throws_error()) );
-    expect_equal_to_reference( trees_from_ms( file.path(ms.output,"msoutput.txt") ), "testcache/saved-refugia-trees.Rd" )
+    expect_error( run_ms( dem, nsamp=sample.config, trees=TRUE, nreps=3, outdir=ms.output ), NA );
+    expect_equal_to_reference( trees_from_ms( file.path(ms.output,"msoutput.txt") ), "saved-refugia-trees.Rd" )
     } )
 
 unlink(file.path(ms.output,"msoutput.txt"))
@@ -59,7 +51,7 @@ if (FALSE) {  # takes too long, not really testing anything
     test_that( "reexpansion, big pops", {
         expect_that( run_ms( big.dem, nsamp=sample.config, trees=TRUE, nreps=3, outdir=ms.output ),
                      not(throws_error()) );
-        expect_equal_to_reference( trees_from_ms( file.path(ms.output,"msoutput.txt") ), "testcache/saved-refugia-trees-2.Rd" )
+        expect_equal_to_reference( trees_from_ms( file.path(ms.output,"msoutput.txt") ), "saved-refugia-trees-2.Rd" )
         } )
 
 
@@ -80,7 +72,7 @@ if (FALSE) {  # takes too long, not really testing anything
                 , not(throws_error()) );
         expect_equal_to_reference( 
                 trees_from_ms( file.path(ms.output,"msoutput.txt") )
-                , "testcache/saved-refugia-trees-3.Rd" )
+                , "saved-refugia-trees-3.Rd" )
         } )
 
 

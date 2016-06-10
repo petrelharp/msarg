@@ -44,29 +44,12 @@ methods::setMethod("[[", signature=c(x="demography",i="ANY"), definition=functio
 methods::setMethod("[[<-", signature=c(x="demography",i="ANY",value="ANY"), definition=function (x,i,value) { x@popStates[[i]]<-value; return(x) } )
 methods::setMethod("plot", signature=c(x="demography"), definition=function (x,...) {
         NN <- sapply( x@popStates, slot, "N" )
-        cex.fac <- 2/quantile(NN[NN>0],.9)
+        cex.fac <- 5/max(1,NN)
         for (k in seq_along(x@popStates)) {
             readline(paste("Hit enter for t = ", c(0,x@t)[k]))
             plot(x[[k]], cex.fac=cex.fac, ...)
         }
     } )
-
-#' @export
-add_to_demography <- function (dem,dt,fn=identity,pop,...,tnew=dt+if(length(dem@t)>0){dem@t[length(dem@t)]}else{0}) {
-    # add to a demography by applying a modifier function fn 
-    #  to another population model,
-    #  by default the previous state
-    if (inherits(dem,"popArray")) {
-        dem <- new("demography",popStates=list(dem),t=numeric(0))
-    }
-    nt <- length(dem@popStates)
-    if (missing(pop)) { pop <- dem@popStates[[nt]] }
-    if (is.numeric(pop)) { pop <- dem@popStates[[pop]] }
-    dem@popStates <- c( dem@popStates, fn(pop,...) )
-    stopifnot( tnew >= max(c(0,dem@t)) )
-    dem@t <- c(dem@t,tnew)
-    return(dem)
-}
 
 #' @export
 demography <- function (ga,t) { new("demography",popStates=list(ga),t=numeric(0)) }
@@ -85,10 +68,22 @@ methods::setMethod("print", signature=c(x="msarg"), definition=function (x,sep="
         return(invisible(text.x))
     } )
 
+#' Construct an ms Command Line From a Demography
+#'
+#' @param x The demography object.
+#' @param nsamp The sample configuration.
+#' @param scale.migration Given migration rates are forwards-time (so must rescale to reverse-time rates for ms).
+#' @param N.eps Set populations with zero population size to this value, to avoid noncommunicating subpopulations.
+#' @param ... Other parameters passed to \code{ms}.
 #' @export msarg
 methods::setGeneric("msarg", function(x,...) { standardGeneric("msarg") })
 
-methods::setMethod("msarg", signature=c(x="demography"), definition=function (x,nsamp,scale.migration=TRUE,...) {
+methods::setMethod("msarg", signature=c(x="demography"), 
+   definition=function (x,
+                        nsamp,
+                        scale.migration=TRUE,
+                        N.eps=NULL,
+                        ...) {
         ## FROM ms:
         # usage: ms nsam howmany 
         #   Options: 
@@ -136,27 +131,28 @@ methods::setMethod("msarg", signature=c(x="demography"), definition=function (x,
                     list(
                         "-I"=c( prod(dim(x[[1]])), nsamp )
                         ),
-                    msarg_N(x[[1]]),  # note that N must come before G, as N sets G to zero.
+                    msarg_N(x[[1]],eps=N.eps),  # note that N must come before G, as N sets G to zero.
                     msarg_G(x[[1]]),
-                    msarg_M(x[[1]],scale.migration=scale.migration)
+                    msarg_M(x[[1]],scale.migration=scale.migration,eps=N.eps)
                 )
         for (k in seq_along(x@t)) {
             t <- x@t[k]
             arglist <- c( 
                     arglist,
-                    msarg_N(x[[k+1]],t,previous=x[[k]]),  # note that N must come before G, as N sets G to zero.
+                    msarg_N(x[[k+1]],t,previous=x[[k]],eps=N.eps),  # note that N must come before G, as N sets G to zero.
                     msarg_G(x[[k+1]],t,previous=x[[k]]),
-                    msarg_M(x[[k+1]],t,previous=x[[k]],scale.migration=scale.migration)
+                    msarg_M(x[[k+1]],t,previous=x[[k]],scale.migration=scale.migration,eps=N.eps)
                 )
         }
         return(new("msarg",.Data=arglist,names=names(arglist)))
     } )
 
-msarg_N <- function (ga,t=numeric(0),previous,eps=min(ga@N[ga@N>0])/1000) {
+msarg_N <- function (ga,t=numeric(0),previous,eps) {
     # Ns that haven't changed don't matter
     #   and replace zeros with eps
+    if (missing(eps) || is.null(eps)) { eps <- min(ga@N[ga@N>0])/1000 }
     N <- ga@N
-    N[N<=0] <- eps
+    N[N<eps] <- eps
     # so only output the relevant -eg commands
     dothese <- if (missing(previous)) { seq_along(N) } else { which(N!=previous@N) }
     Narg <- lapply( seq_along(dothese), function (k) {
@@ -179,14 +175,14 @@ msarg_G <- function (ga,t=numeric(0),previous) {
     return(Garg)
 }
 
-msarg_M <- function (ga,t=numeric(0),previous,scale.migration=TRUE) {
+msarg_M <- function (ga,t=numeric(0),previous,scale.migration=TRUE,eps=NULL) {
     # M is a sparse matrix,
     #   so only output the relevant -em commands
     # also: need to transpose and scale by population sizes
     #   since M is forwards-times migration rates,
     #   and ms takes reverse-time ("lineage") migration rates.
     # (optionally skip this step to allow ms-style migration input)
-    M <- if (scale.migration) { Matrix::t(lineage_M(ga)) } else { ga@M }
+    M <- if (scale.migration) { Matrix::t(lineage_M(ga,eps=eps)) } else { ga@M }
     rind <- rowinds(M)  # yes this is inefficient
     cind <- colinds(M)
     # don't do the diagonal
@@ -207,29 +203,13 @@ msarg_M <- function (ga,t=numeric(0),previous,scale.migration=TRUE) {
 }
 
 #' @export
-lineage_M <- function (ga,eps=min(ga@N[ga@N>0])/1000) {
+lineage_M <- function (ga,eps) {
+    if (missing(eps) || is.null(eps)) { eps <- min(ga@N[ga@N>0])/1000 }
     M <- ga@M
     rind <- rowinds(M)
     cind <- colinds(M)
     M@x <- M@x * (ga@N[rind]+eps) / (ga@N[cind]+eps)  # scale by pop sizes
     return(M)
-}
-
-#' @export
-check_demography <- function (dem,
-                              ga=dem[[length(dem)]],
-                              nstarts=10,
-                              niter=1000) {
-    # check if the longest-ago setup communicates between states
-    # by spreading out mass from from random initial states
-    M <- ga@M
-    M <- M/(2*max(Matrix::rowSums(M))) + Matrix::Diagonal(nrow(M),1-Matrix::rowSums(M))
-    xx <- do.call( rbind, lapply( 1:nstarts, function (k) {
-                        ifelse( 1:nrow(M)==sample.int(nrow(M),1), 1, 0 ) } ) )
-    for (k in 1:niter) {
-        xx <- xx %*% M
-    }
-    return( ! any( Matrix::colSums(xx) == 0 ) )
 }
 
 ### stuff for calling ms
@@ -246,6 +226,7 @@ methods::setMethod("run_ms", signature=c(x="demography"),
                          trees=FALSE,
                          nreps=1,
                          tofile=TRUE,
+                         ms.binary="ms",
                          ...) {
         if (missing(theta) & !trees) { stop("Must specify either theta or trees=TRUE.") }
         if (NCOL(nsamp)==4) {
@@ -265,7 +246,7 @@ methods::setMethod("run_ms", signature=c(x="demography"),
             msarg.file <- file.path(outdir,"msarg.txt")
             cat(toString(ms.arg),file=msarg.file)
         }
-        ms.call <- paste( "ms", sum(nsamp), nreps, 
+        ms.call <- paste( ms.binary, sum(nsamp), nreps, 
             if (!missing(theta)) { paste("-t",theta) } else {""},
             if (trees) { "-T" } else {""},
             if (tofile) { paste("-f", msarg.file) } else { toString(ms.arg,sep=' ') },
@@ -408,7 +389,7 @@ plot_layer <- function (ga,
                         layer,
                         eps=0.05,
                         lwd.fac=1,
-                        cex.fac=2/quantile(ga@N[ga@N>0],.9),
+                        cex.fac=2/quantile(pmax(10,ga@N[ga@N>0]),.9),
                         length=0.03,
                         alpha=0.05,
                         N.eps=1e-3,
@@ -582,62 +563,6 @@ restrict_patch <- function (ga, layer, xy, r) {
     zero.these <- layers[ gdists > r ]
     ga@N[zero.these] <- 0
     return(ga)
-}
-
-#' @export
-logistic_interpolation <- function (dem, 
-                                    t.end, 
-                                    t.begin, 
-                                    nsteps, 
-                                    speed, 
-                                    width, 
-                                    sigma=sqrt(speed*width/sqrt(2)), 
-                                    r=speed/(width*sqrt(2)), 
-                                    dt.per.step=100,
-                                    max.step=0.2) {
-    # Do logistic growth to interpolate between population states.
-    #  does dt.per.step 'invisible' steps -- it seems essential this is fairly large.
-    stopifnot( ( t.end < t.begin ) && ( t.begin <= max(dem@t) ) )
-    #   This only works if both t.end and t.begin are in the same interval,
-    #     with population states specified on either end.
-    ga.interval <- findInterval( (t.end+t.begin)/2, c(0,dem@t) )
-    stopifnot( ( c(0,dem@t)[ga.interval] <= t.end ) && ( t.begin <= c(0,dem@t)[ga.interval+1] ) ) 
-    # we will add new population states at these times:
-    add.t <- seq(t.begin,t.end,length.out=nsteps+1)
-    new.t <- sort(unique(c(dem@t,add.t)))
-    # full list of demographies will go here
-    new.dem <- vector(length(new.t),mode="list")
-    # populate with existing states
-    new.dem[ match(c(0,dem@t),c(0,new.t)) ] <- dem@popStates
-    # ending state, determines carrying capacities
-    end.N <- dem[[ga.interval]]@N
-    # beginning state
-    begin.k <- match(t.begin,c(0,new.t))
-    new.dem[[ begin.k ]] <- next.ga <- dem[[ga.interval+1]]
-    zeros <- ( (next.ga@N==0) & (end.N==0) )
-    # time step length
-    dt <- (t.begin-t.end)/(nsteps*dt.per.step)
-    # Laplacian operator -- should really use *migration matrix* for this?
-    #  do some gymnastics to get migration matrix if sigma > 1
-    nsig <- max(0,ceiling(log2(dt*sigma^2)))
-    sig2 <- (dt*sigma^2) / 2^nsig
-    adj <- (sig2/4) * grid.adjacency(nrow(dem),ncol(dem),diag=FALSE)
-    diag(adj) <- 1-Matrix::rowSums(adj)
-    for (k in seq_len(1+nsig)[-1]) { adj <- adj%*%adj }
-    for (k in 1:nsteps) {
-        for (j in 1:dt.per.step) {
-            ## discrete logistic, but with bounded steps
-            lstep <- pmax(-max.step, pmin(max.step, dt * r * ( end.N - next.ga@N ) ) )
-            next.ga@N <- Matrix::as.vector( adj %*% ( next.ga@N * ( 1 + lstep ) ) )
-            next.ga@N[zeros] <- 0.0
-        }
-        new.dem[[ begin.k - k ]] <- next.ga
-    }
-    return( 
-        new( "demography",
-            popStates=new.dem,
-            t=new.t
-        ) )
 }
 
 
