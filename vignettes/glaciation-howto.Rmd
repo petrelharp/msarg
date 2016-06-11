@@ -48,7 +48,7 @@ Note that `Ne` is actually the number of individuals *per deme*, so the actual t
 Now, set up the grid,
 and use it to initialize a `demography` object.
 ```{r init_grid}
-dem <- demography( grid_array(nlayers=1,nrow=grid.nrow,ncol=grid.ncol,N=1,mig.rate=mig.rate) )
+dem <- ms_demog( grid_array(nlayers=1,nrow=grid.nrow,ncol=grid.ncol,N=1,mig.rate=mig.rate) )
 plot(dem[[1]])
 ```
 

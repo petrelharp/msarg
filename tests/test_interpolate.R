@@ -1,6 +1,6 @@
 source("../msarg.R")
 
-dem <- demography( grid_array(nlayers=1,nrow=30,ncol=1,N=1,mig.rate=1) )
+dem <- ms_demog( grid_array(nlayers=1,nrow=30,ncol=1,N=1,mig.rate=1) )
 mask <- matrix(1,nrow=nrow(dem),ncol=ncol(dem))
 mask[ row(mask)>2 ] <- 0
 dem <- add_to_demography( dem, tnew=10, fn=modify_grid_layer, layer=1, dN=mask )

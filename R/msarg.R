@@ -17,7 +17,7 @@ NULL
 # An entire demographic model strings together states:
 
 #' @export
-methods::setClass("demography", representation(
+methods::setClass("ms_demog", representation(
         popStates="list",       # a list of popArrays
         t="numeric"             # vector of lengths of times ago of transitions between the states
     ) )
@@ -35,14 +35,14 @@ methods::setClass("popArray", representation(
 #' @export
 methods::setClass("gridArray", contains="popArray")
 
-methods::setMethod("dim", signature=c(x="demography"), definition=function (x) { dim(x[[1]]) } )
-methods::setMethod("length", signature=c(x="demography"), definition=function (x) { length(x@popStates) } )
+methods::setMethod("dim", signature=c(x="ms_demog"), definition=function (x) { dim(x[[1]]) } )
+methods::setMethod("length", signature=c(x="ms_demog"), definition=function (x) { length(x@popStates) } )
 
 #' @export
-methods::setAs("demography", "list", def=function (from) { from@popStates } )
-methods::setMethod("[[", signature=c(x="demography",i="ANY"), definition=function (x,i) { x@popStates[[i]] } )
-methods::setMethod("[[<-", signature=c(x="demography",i="ANY",value="ANY"), definition=function (x,i,value) { x@popStates[[i]]<-value; return(x) } )
-methods::setMethod("plot", signature=c(x="demography"), definition=function (x,...) {
+methods::setAs("ms_demog", "list", def=function (from) { from@popStates } )
+methods::setMethod("[[", signature=c(x="ms_demog",i="ANY"), definition=function (x,i) { x@popStates[[i]] } )
+methods::setMethod("[[<-", signature=c(x="ms_demog",i="ANY",value="ANY"), definition=function (x,i,value) { x@popStates[[i]]<-value; return(x) } )
+methods::setMethod("plot", signature=c(x="ms_demog"), definition=function (x,...) {
         NN <- sapply( x@popStates, slot, "N" )
         cex.fac <- 5/max(1,NN)
         for (k in seq_along(x@popStates)) {
@@ -52,7 +52,7 @@ methods::setMethod("plot", signature=c(x="demography"), definition=function (x,.
     } )
 
 #' @export
-demography <- function (ga,t) { new("demography",popStates=list(ga),t=numeric(0)) }
+ms_demog <- function (ga,t) { new("ms_demog",popStates=list(ga),t=numeric(0)) }
 
 ### Stuff for writing ms arguments
 
@@ -76,9 +76,10 @@ methods::setMethod("print", signature=c(x="msarg"), definition=function (x,sep="
 #' @param N.eps Set populations with zero population size to this value, to avoid noncommunicating subpopulations.
 #' @param ... Other parameters passed to \code{ms}.
 #' @export msarg
+#' @name msarg
 methods::setGeneric("msarg", function(x,...) { standardGeneric("msarg") })
 
-methods::setMethod("msarg", signature=c(x="demography"), 
+methods::setMethod("msarg", signature=c(x="ms_demog"), 
    definition=function (x,
                         nsamp,
                         scale.migration=TRUE,
@@ -217,8 +218,8 @@ lineage_M <- function (ga,eps) {
 
 #' @export run_ms
 methods::setGeneric("run_ms", function(x,...) { standardGeneric("run_ms") })
-methods::setMethod("run_ms", signature=c(x="popArray"), definition=function (x,...) { run_ms(demography(x),...) } )
-methods::setMethod("run_ms", signature=c(x="demography"), 
+methods::setMethod("run_ms", signature=c(x="popArray"), definition=function (x,...) { run_ms(ms_demog(x),...) } )
+methods::setMethod("run_ms", signature=c(x="ms_demog"), 
     definition=function (x,
                          nsamp,
                          outdir,

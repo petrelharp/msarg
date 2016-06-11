@@ -26,7 +26,7 @@ sample.config <- sort_sample_config( cbind(
         layer=1,
         n=c(1,2,3)
     ) )
-dem <- demography( ga )
+dem <- ms_demog( ga )
 
 # so sample vector should be 1,2,0,0,0,3
 nsvec <- nsample_vector(dem[[1]],sample.config)
@@ -104,7 +104,7 @@ sample.config <- sort_sample_config( cbind(
         layer=1,
         n=c(1,5,2,3)
     ) )
-dem <- demography( ga )
+dem <- ms_demog( ga )
 
 # so sample vector should be 1,2,0,0,0,3
 nsvec <- nsample_vector(dem[[1]],sample.config)

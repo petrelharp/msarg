@@ -26,7 +26,7 @@ sample.config <- sort_sample_config( cbind(
         layer=1,
         n=10
     ) )
-dem <- demography( ga )
+dem <- ms_demog( ga )
 msout <- run_ms( dem, tofile=FALSE, outdir=outdir, nsamp=sample.config, trees=TRUE, nreps=1000 )
 trees <- trees_from_ms(msout)
 dists <- tree_dists( trees, sample.config )
@@ -55,7 +55,7 @@ sample.config <- sort_sample_config( cbind(
         layer=1,
         n=1
     ) )
-dem <- demography( ga )
+dem <- ms_demog( ga )
 msout <- run_ms( dem, tofile=FALSE, outdir=outdir, nsamp=sample.config, trees=TRUE, nreps=1000 )
 trees <- trees_from_ms(msout)
 dists <- tree_dists( trees, sample.config )
@@ -83,7 +83,7 @@ sample.config <- sort_sample_config( cbind(
         layer=1,
         n=rep(2,6)
     ) )
-dem <- demography( ga )
+dem <- ms_demog( ga )
 msout <- run_ms( dem, tofile=FALSE, outdir=outdir, nsamp=sample.config, trees=TRUE, nreps=1000 )
 trees <- trees_from_ms(msout)
 dists <- tree_dists( trees, sample.config )

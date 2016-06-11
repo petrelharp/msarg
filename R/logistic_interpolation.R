@@ -62,7 +62,7 @@ logistic_interpolation <- function (dem,
         new.dem[[ begin.k - k ]] <- next.ga
     }
     return( 
-        new( "demography",
+        new( "ms_demog",
             popStates=new.dem,
             t=new.t
         ) )

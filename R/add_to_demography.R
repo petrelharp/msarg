@@ -5,7 +5,7 @@ add_to_demography <- function (dem,dt,fn=identity,pop,...,tnew=dt+if(length(dem@
     #  to another population model,
     #  by default the previous state
     if (inherits(dem,"popArray")) {
-        dem <- new("demography",popStates=list(dem),t=numeric(0))
+        dem <- new("ms_demog",popStates=list(dem),t=numeric(0))
     }
     nt <- length(dem@popStates)
     if (missing(pop)) { pop <- dem@popStates[[nt]] }

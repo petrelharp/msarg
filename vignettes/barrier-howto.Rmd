@@ -44,7 +44,7 @@ barrier.rows <- c(10,20)  # locations of the barrier
 
 Now, we will initialize the demographic model with a grid:
 ```{r init_grid}
-dem <- demography( grid_array(nlayers=1,nrow=nrow,ncol=ncol,N=1,mig.rate=1) )
+dem <- ms_demog( grid_array(nlayers=1,nrow=nrow,ncol=ncol,N=1,mig.rate=1) )
 plot(dem[[1]])
 ```
 

@@ -107,7 +107,7 @@ Now, here's an example of stringing these together into a model,
 with four model changes,
 and various `dt` between them:
 ```{r init_dem}
-dem <- demography( grid_array(nlayers=2,nrow=30,ncol=20,N=1000,mig.rate=1,admix.rate=0.1) )
+dem <- ms_demog( grid_array(nlayers=2,nrow=30,ncol=20,N=1000,mig.rate=1,admix.rate=0.1) )
 dem[[1]] <- modify_migration(dem[[1]],layer=1,doutM=rexp(prod(dim(dem[[1]])[1:2])),dinM=rexp(prod(dim(dem[[1]])[1:2])))
 dem <- add_to_demography( dem, dt=2, add_barrier, layer=1, rows=10 )
 dem <- add_to_demography( dem, dt=1, restrict_patch, layer=1,xy=c(1,1),r=10 )
@@ -127,7 +127,7 @@ plot(dem[[4]])
 We also have a function to convert these to ms command line parameters.
 To check this, let's try a smaller model.
 ```{r ms_args}
-dem <- demography( grid_array(nlayers=2,nrow=3,ncol=2,N=1000,mig.rate=1,admix.rate=0.1) )
+dem <- ms_demog( grid_array(nlayers=2,nrow=3,ncol=2,N=1000,mig.rate=1,admix.rate=0.1) )
 dem[[1]] <- modify_migration(dem[[1]],layer=1,doutM=rexp(ncol(dem[[1]])),dinM=rexp(nrow(dem[[1]])))
 dem <- add_to_demography( dem, dt=1, restrict_patch, layer=1,xy=c(1,1),r=1 )
 dem[[2]] <- restrict_patch(dem[[2]],layer=2,xy=c(nrow(dem[[1]]),ncol(dem[[1]])),r=1)

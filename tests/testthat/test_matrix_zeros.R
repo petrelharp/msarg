@@ -38,7 +38,7 @@ M2 <- new("dgCMatrix"
         , factors = list()
     )
 
-dem <- new( "demography",
+dem <- new( "ms_demog",
         popStates = list(
                 new("gridArray"
                     , npop = c(3L, 3L, 1L)

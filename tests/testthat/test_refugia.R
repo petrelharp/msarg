@@ -12,7 +12,7 @@ glacier.end <- 500          # units of time ago (in Ne) that glaciation ended
 glacier.begin <- 1000        # units of time ago (in Ne) that glaciation began
 pop.density <- 1+rpois( grid.nrow*grid.ncol, 10 )
 
-dem <- demography( grid_array(nlayers=1,nrow=grid.nrow,ncol=grid.ncol,
+dem <- ms_demog( grid_array(nlayers=1,nrow=grid.nrow,ncol=grid.ncol,
                 N=pop.density, mig.rate=mig.rate) )
 
 mask <- matrix(1,nrow=nrow(dem),ncol=ncol(dem))
