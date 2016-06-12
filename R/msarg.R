@@ -151,6 +151,7 @@ methods::setMethod("msarg", signature=c(x="ms_demog"),
 msarg_N <- function (ga,t=numeric(0),previous,eps) {
     # Ns that haven't changed don't matter
     #   and replace zeros with eps
+    if (all(ga@N==0)) { stop(sprintf("All population sizes are less than %f.",eps)) }
     if (missing(eps) || is.null(eps)) { eps <- min(ga@N[ga@N>0])/1000 }
     N <- ga@N
     N[N<eps] <- eps
@@ -268,7 +269,17 @@ trees_from_ms <- function (ms.output) {
         ms.output <- scan(ms.output,what='char')
     }
     almost <- which( grepl("^//",ms.output) )
-    lapply( ms.output[almost+1], function (x) { ape::read.tree(text=x) } )
+    out <- lapply( ms.output[almost+1], function (x) { 
+               tryCatch( ape::read.tree(text=x),
+                        error=function(e) { 
+                            # cat("Warning: bad tree.\n")
+                            # cat("  ", e$message, "\n")
+                            NULL
+                        } )
+        } )
+    skip <- sapply( out, is.null )
+    if (sum(skip)>0) { warning(sprintf("skipping %d bad trees.",sum(skip))) }
+    return( out[!skip] )
 }
 
 #' @export

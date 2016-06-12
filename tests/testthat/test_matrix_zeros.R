@@ -1,5 +1,4 @@
 library(Matrix)
-library(msarg)
 
 context("dealing with zeros correctly")
 
