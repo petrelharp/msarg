@@ -188,6 +188,7 @@ msarg_M <- function (ga,t=numeric(0),previous,scale.migration=TRUE,eps=NULL) {
     cind <- colinds(M)
     # don't do the diagonal
     dothese <- ( rind != cind )
+    if (any(M@x[dothese]<0)) { stop("M has negative entries.") }
     # don't respecify migration rates that haven't changed
     if (!missing(previous)) {
         # note: if structure of matrix has changed will respecify some that don't need to be (no harm)
