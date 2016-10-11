@@ -230,6 +230,7 @@ methods::setMethod("run_ms", signature=c(x="ms_demog"),
                          nreps=1,
                          tofile=TRUE,
                          ms.binary="ms",
+                         segsites=NULL,
                          ...) {
         if (missing(theta) & !trees) { stop("Must specify either theta or trees=TRUE.") }
         if (NCOL(nsamp)==4) {
@@ -252,6 +253,7 @@ methods::setMethod("run_ms", signature=c(x="ms_demog"),
         ms.call <- paste( ms.binary, sum(nsamp), nreps, 
             if (!missing(theta)) { paste("-t",theta) } else {""},
             if (trees) { "-T" } else {""},
+            if (!is.null(segsites)) { paste("-s",segsites) } else { "" },
             if (tofile) { paste("-f", msarg.file) } else { toString(ms.arg,sep=' ') },
             if (tofile) { paste( ">", file.path(outdir,"msoutput.txt") ) } else { "" } 
             ) 
