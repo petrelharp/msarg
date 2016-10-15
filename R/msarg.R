@@ -254,7 +254,7 @@ methods::setMethod("run_ms", signature=c(x="ms_demog"),
             if (!missing(theta)) { paste("-t",theta) } else {""},
             if (trees) { "-T" } else {""},
             if (!is.null(segsites)) { paste("-s",segsites) } else { "" },
-            if (tofile) { paste("-f", msarg.file) } else { toString(ms.arg,sep=' ') },
+            if (tofile) { if (ms.binary=="mspms") { paste0("@", msarg.file) } else { paste("-f", msarg.file) } } else { toString(ms.arg,sep=' ') },
             if (tofile) { paste( ">", file.path(outdir,"msoutput.txt") ) } else { "" } 
             ) 
         ms.results <- system( ms.call, intern=TRUE )
